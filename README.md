@@ -1,4 +1,4 @@
-# Medicaid Disability Manual
+# Multiple-version Policy RAG (Medicaid Disability Manual Example)
 
 A local reader for three editions of the Medicaid Disability Manual. The Change Tracker page shows what changed between editions, section by section. A question command answers from the manual text and cites the passage it used.
 

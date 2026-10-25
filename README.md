@@ -127,4 +127,4 @@ The tests cover version parsing, section comparison, chunk size, and the shape o
 
 ## License and source text
 
-The manuals are California Medicaid policy documents. Keep them with their original wording when you share this project, and treat generated summaries as a guide back to the cited page.
+The manuals are Medicaid policy documents. Keep them with their original wording when you share this project, and treat generated summaries as a guide back to the cited page.

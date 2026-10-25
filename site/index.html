@@ -1,0 +1,1431 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DHCS Change Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* A tracked-changes reader. The whole newer notice reads top to bottom with its
+   changes marked in place; the reason for each change sits in the margin beside it.
+   Substantive changes get the full redline, minor edits stay faint, formatting is
+   hidden. The outline on the left is the notice's own structure. */
+:root {
+  --bg: #F6F7F6; --panel: #FFFFFF; --sunk: #EEF1F0; --ink: #16222A; --mute: #66737A; --faint: #9AA5AA; --line: #DDE3E1;
+  --accent: #155E75; --accent-soft: #E1EEF2;
+  --add: #17603A; --add-bg: #DDF2E4; --del: #A3301F; --del-bg: #FCE7E3;
+  --ui: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --read: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11191E; --panel: #172228; --sunk: #1D2A31; --ink: #E3EAEC; --mute: #9AA9B0; --faint: #6E7E86; --line: #2A3840;
+    --accent: #6FC3DB; --accent-soft: #1B3540; --add: #8FDCAD; --add-bg: #17392A; --del: #F4A095; --del-bg: #45211C; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11191E; --panel: #172228; --sunk: #1D2A31; --ink: #E3EAEC; --mute: #9AA9B0; --faint: #6E7E86; --line: #2A3840;
+  --accent: #6FC3DB; --accent-soft: #1B3540; --add: #8FDCAD; --add-bg: #17392A; --del: #F4A095; --del-bg: #45211C; color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--ui); }
+* { box-sizing: border-box; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: var(--accent); }
+
+.app { --tocw: 300px; display: grid; grid-template-columns: var(--tocw) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+
+/* Top bar: which document */
+.docs { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--sunk); padding: 3px; gap: 3px; margin-left: auto; }
+.docs button { border: 0; background: none; border-radius: 7px; padding: 6px 14px; cursor: pointer; font-weight: 600; font-size: 14px; display: grid; text-align: left; line-height: 1.2; }
+.docs button small { font-weight: 400; font-size: 11.5px; color: var(--mute); }
+.docs button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.loading { color: var(--mute); padding: 40px 0; }
+.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px 28px; flex-wrap: wrap; padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+.brand small { display: block; font-weight: 400; font-size: 12.5px; color: var(--mute); letter-spacing: 0; }
+.cmp { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; color: var(--mute); }
+.cmp select { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 7px 10px; font-weight: 600; color: var(--ink); min-height: 38px; }
+
+/* Left column: the version picker, then the outline */
+.side { background: var(--panel); border-right: 1px solid var(--line); overflow: auto; min-height: 0; position: relative; }
+.pick { position: sticky; top: 0; z-index: 4; margin: 0; padding: 16px 14px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.pick > .in { padding: 14px 14px 12px; border-radius: 12px; background: var(--accent-soft); display: grid; gap: 8px; }
+.pick .ph { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
+.pick .pair { font-family: var(--mono); font-size: 17px; font-weight: 500; color: var(--ink); line-height: 1.3; }
+.pick .pair span { color: var(--mute); padding: 0 4px; }
+.pick label { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 6px; font-size: 12.5px; color: var(--mute); }
+.pick select { width: 100%; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 8px; background: var(--panel); padding: 7px 8px; font-weight: 600; font-size: 13px; color: var(--ink); min-height: 36px; }
+.pick .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.pick .quick button { border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); background: var(--panel); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; }
+.pick .quick button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.dlrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 10px; }
+.dlrow select { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 6px 8px; font-size: 13px; min-height: 34px; }
+.dlb { border: 0; border-radius: 8px; background: var(--ink); color: var(--panel); padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dlb:hover { background: var(--accent); }
+.pick .hint { font-size: 12px; color: var(--mute); line-height: 1.4; }
+.toc { padding: 10px 0 28px; }
+.toc h2 { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin: 0 20px 10px; font-weight: 600; }
+
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree .row { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; padding-left: 8px; }
+.tree .row.d1 { padding-left: 20px; } .tree .row.d2 { padding-left: 32px; } .tree .row.d3 { padding-left: 44px; } .tree .row.d4 { padding-left: 56px; } .tree .row.d5 { padding-left: 68px; }
+.toch { display: flex; justify-content: space-between; align-items: baseline; margin: 0 14px 10px 20px; }
+.toch h2 { margin: 0 !important; }
+.toch button { border: 0; background: none; padding: 0 0 0 10px; color: var(--accent); cursor: pointer; font-size: 12px; }
+.tree .row.hit a .tt { color: var(--ink); font-weight: 600; }
+.tree a[data-hits]::after { content: attr(data-hits); font-size: 11px; font-weight: 600; color: var(--ink); background: var(--mark); border-radius: 999px; padding: 0 6px; margin-left: 4px; align-self: center; }
+.toc a { grid-template-columns: 10px auto minmax(0, 1fr) auto !important; }
+mark.hit { background: var(--mark); color: inherit; border-radius: 2px; }
+.qdrop { position: absolute; top: calc(100% + 6px); right: 0; width: max(100%, 380px); max-height: 60vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; z-index: 12; }
+.qdrop .qh { font-size: 12.5px; color: var(--mute); padding: 6px 8px 8px; } .qdrop .qh b { color: var(--ink); }
+.qdrop button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 7px 8px; cursor: pointer; font-size: 13.5px; }
+.qdrop button:hover { background: var(--sunk); }
+.qdrop .lb { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.qdrop .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qdrop .n { font-size: 12px; font-weight: 600; background: var(--mark); border-radius: 999px; padding: 0 7px; font-variant-numeric: tabular-nums; }
+.rsum { margin: 0 16px 10px 20px; font-size: 13px; color: var(--mute); line-height: 1.45; } .rsum b { color: var(--ink); }
+.rf { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 12px 20px; }
+.rf button { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; }
+.rf button b { font-weight: 600; margin-left: 2px; } .rf button[disabled] { opacity: .45; cursor: default; }
+.rf button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.rh { margin: 0 14px 14px 20px; padding: 10px 8px 8px; border: 1px solid var(--line); border-radius: 10px; }
+.rhl { font-size: 11.5px; color: var(--mute); margin-bottom: 6px; }
+.rhs { display: flex; gap: 2px; align-items: stretch; }
+.rv { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 2px 0 0; display: grid; grid-template-rows: 28px auto auto 13px; align-items: end; justify-items: center; gap: 1px; cursor: pointer; font-size: 11px; color: var(--mute); }
+.rv[disabled] { cursor: default; }
+.rv i { display: block; width: 70%; max-width: 30px; background: var(--line); border-radius: 3px 3px 0 0; }
+.rv.on i { background: var(--accent); }
+.rv b { font-size: 12.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rv span { font-family: var(--mono); font-size: 9.5px; letter-spacing: -.02em; white-space: nowrap; }
+.rv em { font-style: normal; font-weight: 600; font-size: 10.5px; } .rv em.up { color: var(--add); } .rv em.dn { color: var(--del); }
+.rv:not([disabled]):hover span { color: var(--accent); text-decoration: underline; }
+.rj { margin: 0 14px 12px 20px; display: grid; gap: 4px; }
+.rj a { display: block !important; padding: 7px 10px !important; border: 1px solid var(--accent); border-radius: 8px; font-size: 13px; }
+.rj a span { color: var(--mute); font-size: 12px; }
+.rl { list-style: none; margin: 0; padding: 0; }
+.rl > li { border-top: 1px solid var(--line); padding: 8px 14px 8px 20px; }
+.rg { display: flex; gap: 8px; align-items: baseline; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.rg .tt { flex: 1; min-width: 0; }
+.rs { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--mute); white-space: nowrap; } .rs.sub { color: var(--accent); }
+.rr { display: grid; gap: 2px; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 5px 6px; margin-left: -6px; cursor: pointer; }
+.rr:hover, .rr.now { background: var(--sunk); } .rr.now { box-shadow: inset 2px 0 0 var(--accent); }
+.rk { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
+.rk.add { color: var(--add); } .rk.del { color: var(--del); } .rk.near { color: var(--accent); }
+.sn { font-size: 12.5px; line-height: 1.4; color: var(--mute); } .sn b { color: var(--ink); background: var(--mark); border-radius: 2px; font-weight: 600; }
+.rm { border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; padding: 2px 0; }
+mark.hit.now { background: var(--accent); color: var(--panel); }
+.search { position: relative; flex: 1 1 220px; max-width: 360px; display: flex; align-items: center; }
+.search input { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 7px 70px 7px 30px; min-height: 36px; font-size: 13.5px; }
+.search::before { content: "⌕"; position: absolute; left: 10px; color: var(--mute); font-size: 15px; }
+.search .cnt { position: absolute; right: 10px; font-size: 12px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.tw { border: 0; background: none; padding: 0; width: 18px; height: 26px; color: var(--mute); cursor: pointer; font-size: 11px; transition: transform .15s; }
+.tw[aria-expanded="true"] { transform: rotate(90deg); }
+.toc .d.in { opacity: .45; }
+.toc .key i { display: inline-block; }
+.grip { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
+.grip:hover, .grip.drag { background: var(--accent-soft); }
+.toc a { display: grid; grid-template-columns: 10px auto minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 4px 16px 4px 17px; border-left: 3px solid transparent; color: var(--ink); text-decoration: none; font-size: 13px; line-height: 1.35; }
+.toc a:hover { background: var(--sunk); }
+.toc a.on { border-left-color: var(--accent); background: var(--accent-soft); }
+.toc a { padding-left: 4px; padding-right: 14px; border-radius: 6px; border-left: 0; }
+.row.d0 a { font-weight: 600; } .row.d2 a, .row.d3 a, .row.d4 a, .row.d5 a { font-size: 12.5px; color: var(--mute); }
+.toc a.on { box-shadow: inset 3px 0 0 var(--accent); }
+.toc .d { width: 8px; height: 8px; border-radius: 50%; align-self: center; box-sizing: border-box; }
+.toc .d.sub { background: var(--accent); }
+.toc .d.minor { border: 1.5px solid var(--faint); }
+.toc .d.dim { background: var(--faint); opacity: .5; }
+.toc .lb { font-family: var(--mono); font-size: 11.5px; color: var(--mute); }
+.toc .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side.wide .tt { white-space: normal; }
+.toc .key { margin: 18px 20px 0; font-size: 12px; color: var(--mute); display: grid; gap: 4px; }
+.toc .key span { display: flex; gap: 8px; align-items: center; }
+
+/* Reading area */
+.main { overflow: auto; min-width: 0; }
+.bar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.bar-in { max-width: 1120px; margin: 0 auto; padding: 10px 32px; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
+.nav { display: flex; align-items: center; gap: 4px; }
+.nav .lbl { font-size: 13.5px; color: var(--mute); margin-right: 6px; }
+.nav .pos { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; font-size: 14px; }
+.ib { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; width: 36px; height: 36px; cursor: pointer; font-size: 16px; line-height: 1; }
+.ib:hover { border-color: var(--accent); color: var(--accent); }
+.sel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 7px 10px; min-height: 36px; font-size: 13.5px; }
+.tg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); font-size: 13px; }
+.tg button { border: 0; background: none; padding: 7px 11px; cursor: pointer; min-height: 34px; }
+.tg button + button { border-left: 1px solid var(--line); }
+.tg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.tg .cap { padding: 7px 4px 7px 11px; color: var(--mute); }
+.spacer { margin-left: auto; }
+.navk button { padding: 7px 12px; } .navk b { font-weight: 600; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.ck { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; cursor: pointer; color: var(--ink); }
+.ck input { width: 16px; height: 16px; accent-color: var(--accent); }
+.view { position: relative; }
+.view summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.view summary::-webkit-details-marker { display: none; }
+.view summary::after { content: "▾"; font-size: 11px; color: var(--mute); }
+.view .menu { position: absolute; right: 0; top: calc(100% + 6px); width: 300px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 12px 14px; display: grid; gap: 10px; z-index: 10; }
+.view .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; }
+.view .menu p { margin: 0; font-size: 12px; color: var(--mute); }
+.contents { display: none; }
+.pairbtn { display: none; border: 1px solid var(--line); background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 6px 10px; font-family: var(--mono); font-size: 12.5px; cursor: pointer; min-height: 36px; }
+
+.doc { max-width: 1180px; margin: 0 auto; padding: 28px 40px 120px; }
+.doc > .sum, .doc > .foot, .sec > .txt { max-width: 800px; }
+.pp { position: relative; }
+.sec { padding: 6px 0; }
+.sec > .txt { min-width: 0; }
+/* Change bars: a rule in the left gutter beside each paragraph that changed. */
+.pp { margin: 0 0 .75em; }
+.pp.cb { border-left: 3px solid var(--accent); padding-left: 14px; margin-left: -17px; }
+.sec.quiet .pp.cb { border-left: 2px dotted var(--faint); padding-left: 15px; }
+.cur .callout { animation: flash 1.6s ease-out 1; }
+@keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
+/* The reason for a change, placed right above the first paragraph it applies to. */
+/* Margin comments: each sits level with the first paragraph it is about,
+   joined to it by a hairline. layoutNotes() nudges overlapping ones down. */
+.callout { position: absolute; left: calc(100% + 40px); top: 0; width: 290px; padding: 2px 0 2px 12px; border-left: 2px solid var(--accent); font-family: var(--ui); font-size: 13.5px; line-height: 1.5; display: grid; gap: 4px; white-space: normal; color: var(--ink); transition: top .15s; }
+.callout::before { content: ""; position: absolute; right: calc(100% + 2px); top: .8em; width: 38px; border-top: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
+.sec.hl .pp.cb { background: var(--accent-soft); }
+.sec.hl .callout { border-left-width: 3px; }
+.callout .tl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.callout .tl span { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--mute); font-size: 12px; }
+.callout p { margin: 0; }
+.callout .ln { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--mute); }
+.callout button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12.5px; text-decoration: underline; }
+.callout.quiet { border-left-color: var(--line); font-size: 12.5px; color: var(--mute); }
+.callout.quiet::before { border-top-color: var(--line); }
+.callout.quiet .tl { color: var(--mute); }
+.callout.back { border-left-color: var(--faint); color: var(--mute); }
+@media (max-width: 1240px) {
+  .callout { position: static; width: auto; margin: 4px 0 10px; padding: 8px 12px; border-left-width: 3px; background: var(--accent-soft); border-radius: 0 8px 8px 0; }
+  .callout::before { display: none; }
+  .callout.quiet, .callout.back { background: var(--sunk); }
+}
+.h { font-family: var(--ui); margin: 22px 0 8px; line-height: 1.3; letter-spacing: -.005em; }
+.h1 { font-size: 25px; margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line); } .h2 { font-size: 21px; } .h3 { font-size: 17.5px; } .h4, .h5, .h6 { font-size: 15.5px; }
+.h .lab { font-family: var(--mono); font-weight: 500; color: var(--accent); margin-right: 10px; font-size: .82em; }
+.body { font-family: var(--read); font-size: 17px; line-height: 1.68; white-space: pre-wrap; overflow-wrap: anywhere; }
+del { background: var(--del-bg); color: var(--del); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+ins { background: var(--add-bg); color: var(--add); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+/* Minor edits and changes outside the chosen area: shown, but quiet. */
+.sec.chg .note .card { border-left-color: var(--accent); }
+.sec.quiet del { background: none; color: var(--faint); text-decoration-thickness: 1px; }
+.sec.quiet ins { background: none; color: inherit; text-decoration: underline dotted var(--faint); text-decoration-thickness: 1.5px; }
+.sec.gone .body { opacity: .8; }
+.pg { display: block; height: .7em; }
+.img { font-family: var(--ui); font-size: 13px; color: var(--mute); font-style: italic; }
+a.url { font-family: var(--ui); font-size: 11.5px; text-decoration: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
+.tbl { overflow-x: auto; white-space: normal; margin: 8px 0; }
+.tbl table { border-collapse: collapse; width: 100%; font-family: var(--ui); font-size: 13.5px; line-height: 1.45; }
+.tbl th, .tbl td { border: 1px solid var(--line); padding: 7px 9px; vertical-align: top; text-align: left; min-width: 8em; }
+.tbl th { background: var(--sunk); }
+.tdel table { text-decoration: line-through; text-decoration-thickness: 1.5px; color: var(--del); background: var(--del-bg); }
+.tdel th { background: color-mix(in srgb, var(--del-bg) 70%, var(--sunk)); }
+.tins table { color: var(--add); background: var(--add-bg); }
+.tins th { background: color-mix(in srgb, var(--add-bg) 70%, var(--sunk)); }
+.tdel::before, .tins::before { display: block; font-family: var(--ui); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.tdel::before { content: "Table removed"; color: var(--del); } .tins::before { content: "Table added"; color: var(--add); }
+.sec.quiet .tdel table, .sec.quiet .tins table { background: none; color: inherit; }
+.sec.quiet .tdel table { color: var(--faint); }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.colh { font-family: var(--ui); font-size: 11.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--mute); margin-bottom: 4px; }
+
+/* Margin notes */
+.note { padding-top: 26px; font-size: 13.5px; line-height: 1.5; }
+.note .card { border-left: 2px solid var(--accent); padding: 2px 0 2px 12px; display: grid; gap: 5px; }
+.note .tl { font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.note .ar { font-size: 12px; color: var(--mute); }
+.note p { margin: 0; }
+.note .ln { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--mute); }
+.note .ln button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12.5px; text-decoration: underline; }
+.sec.quiet .note .card { border-left-color: var(--line); color: var(--mute); }
+.sec.quiet .note .tl { color: var(--mute); }
+.minor-off .sec.minor .note { visibility: hidden; }
+
+/* Summary at the top of the document */
+.sum { padding-bottom: 26px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.counts { font-size: 14px; color: var(--mute); margin-top: 10px; } .counts b { color: var(--ink); font-weight: 600; }
+.sum .eyebrow { font-size: 12.5px; color: var(--mute); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.sum h1 { font-size: 28px; line-height: 1.2; letter-spacing: -.015em; margin: 8px 0 10px; text-wrap: balance; }
+.chain { font-family: var(--mono); font-size: 12.5px; color: var(--mute); }
+.chain b { color: var(--ink); font-weight: 500; }
+.story { font-family: var(--read); font-size: 17.5px; line-height: 1.55; margin: 16px 0 6px; }
+.ai { font-size: 11.5px; color: var(--mute); }
+.chg { list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.chg li button { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 2px 12px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 9px 2px; cursor: pointer; }
+.chg li button:hover .t { color: var(--accent); }
+.chg .l { font-family: var(--mono); font-size: 12.5px; color: var(--accent); padding-top: 1px; }
+.chg .t { font-size: 14.5px; }
+.chg .a { grid-column: 2; font-size: 12px; color: var(--mute); }
+.chg li.dim { opacity: .45; }
+.more { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 8px 2px; font-size: 13.5px; }
+.facts { padding-top: 34px; display: grid; gap: 14px; align-content: start; }
+.fact b { display: block; font-size: 26px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13px; color: var(--mute); }
+.rt { font-size: 13px; color: var(--mute); margin-top: 14px; }
+.rt button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
+.sumh { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin: 26px 0 0; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sumh .ai { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.dl { display: grid; gap: 10px; margin-top: 6px; }
+.btn { display: grid; text-decoration: none; background: var(--ink); color: var(--panel); border-radius: 10px; padding: 10px 14px; font-weight: 600; font-size: 14px; }
+.btn small { font-weight: 400; font-size: 12px; opacity: .75; }
+.btn:hover { background: var(--accent); }
+.vers { display: grid; font-size: 13px; }
+.vers span { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin-bottom: 2px; }
+.vers a { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); text-decoration: none; font-family: var(--mono); font-size: 12.5px; }
+.vers a em { font-style: normal; font-family: var(--ui); color: var(--mute); }
+.foot { font-size: 12.5px; color: var(--mute); border-top: 1px solid var(--line); margin-top: 40px; padding-top: 14px; max-width: 70ch; }
+.askopen { border: 0; border-radius: 8px; background: var(--ink); color: var(--panel); padding: 7px 14px; font-weight: 600; cursor: pointer; }
+.askopen:hover { background: var(--accent); }
+.askpane { position: fixed; z-index: 30; top: 0; right: 0; height: 100%; width: min(420px, 100%); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgba(0,0,0,.12); display: none; grid-template-rows: auto auto minmax(0, 1fr); }
+.askpane.open { display: grid; }
+.askhead { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.askhead b { font-size: 16px; }
+.askhead span { color: var(--mute); font-size: 12.5px; }
+.askform { display: grid; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.askform textarea { width: 100%; min-height: 72px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: var(--panel); color: var(--ink); }
+.askform .row { display: flex; gap: 8px; align-items: center; }
+.askform select { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 6px 8px; }
+.askgo { border: 0; border-radius: 8px; background: var(--accent); color: var(--panel); padding: 7px 12px; font-weight: 600; cursor: pointer; margin-left: auto; }
+.askgo:disabled { opacity: .55; cursor: wait; }
+.askbody { overflow: auto; padding: 14px 16px 28px; display: grid; gap: 12px; align-content: start; }
+.askbody .ans { font-family: var(--read); font-size: 17px; line-height: 1.55; white-space: pre-wrap; }
+.askbody .src { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; }
+.askbody .src a { font-weight: 600; text-decoration: none; }
+.askbody .src p { margin: 0; color: var(--mute); font-size: 13px; }
+.askerr { color: var(--del); font-size: 13.5px; }
+
+@media (max-width: 980px) {
+
+
+}
+@media (max-width: 820px) {
+  .docs small { display: none; } .docs button { padding: 6px 10px; } .docs { margin-left: 0; }
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none; position: fixed; inset: 0 12% 0 0; z-index: 20; box-shadow: 0 0 40px rgba(0,0,0,.25); }
+  .side.open { display: block; }
+  .grip { display: none; }
+  .contents { display: inline-block; }
+  .bar-in, .doc { padding-inline: 16px; }
+  .bar-in { gap: 8px; }
+  .nav .lbl { display: none; }
+  .bar .sel#area { max-width: 140px; }
+  .top { padding: 10px 16px; }
+  .pairbtn { display: none; }
+  .nav .pos { min-width: 44px; font-size: 13px; }
+  .bar .sel#area { max-width: 96px; }
+  .bar-in { gap: 6px; } .spacer { display: none; }
+  .view summary { font-size: 0; padding: 7px 10px; } .view summary::before { content: "View"; font-size: 13.5px; } .view summary::after { font-size: 11px; }
+  .view .menu { width: min(300px, calc(100vw - 32px)); }
+  .cmp { margin-left: 0; }
+  .sec > .txt { margin-left: -12px; padding-left: 9px; }
+  .cols { grid-template-columns: minmax(0, 1fr); }
+  .sum h1 { font-size: 23px; }
+}
+
+/* Deadlines calendar (mockup) */
+.app.cal { grid-template-columns: minmax(0, 1fr); }
+.app.cal .side, .app.cal .bar { display: none; }
+.app.cal .doc { max-width: none; padding: 0; }
+.calw { max-width: 1180px; margin: 0 auto; padding: 28px 40px 100px; }
+.calw h1 { font-size: 28px; letter-spacing: -.015em; margin: 0 0 6px; }
+.calw .lede { color: var(--mute); margin: 0 0 18px; max-width: 70ch; }
+.calbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
+.calbar .tg button { padding: 7px 12px; }
+.calbar .mnav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.calbar .mnav b { min-width: 150px; text-align: center; font-size: 16px; }
+.calgrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
+.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
+.month .dow { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); padding: 8px 10px; background: var(--sunk); border-bottom: 1px solid var(--line); }
+.day { min-height: 104px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 6px 6px 8px; display: grid; align-content: start; gap: 4px; position: relative; }
+.day:nth-child(7n) { border-right: 0; }
+.day .n { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.day.out { background: color-mix(in srgb, var(--sunk) 50%, var(--panel)); }
+.day.out .n { opacity: .5; }
+.day.today .n { background: var(--accent); color: var(--panel); border-radius: 999px; width: 22px; height: 22px; display: grid; place-items: center; font-weight: 600; }
+.day.inper { background: color-mix(in srgb, var(--accent-soft) 30%, var(--panel)); }
+.ev { display: block; text-align: left; border: 0; border-radius: 6px; padding: 3px 6px; font-size: 12px; line-height: 1.3; cursor: pointer; text-decoration: none; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev.due { background: var(--del-bg); color: var(--del); font-weight: 600; }
+.ev.starts { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.ev.issued { background: var(--sunk); color: var(--ink); }
+.ev.period { background: none; color: var(--accent); padding-left: 0; }
+.ev.past { opacity: .55; }
+.ev.sel { outline: 2px solid var(--ink); }
+.agenda h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin: 0 0 10px; }
+.agenda ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.card2 { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 12px; align-content: start; }
+.card2 > :not(.dt) { grid-column: 2; }
+.card2.sel { border-color: var(--ink); }
+.card2 .dt { grid-row: span 4; text-align: center; border-radius: 8px; padding: 6px 0; background: var(--sunk); align-self: start; }
+.card2 .dt b { display: block; font-size: 20px; line-height: 1; }
+.card2 .dt span { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+.card2.due .dt { background: var(--del-bg); color: var(--del); }
+.card2.starts .dt { background: var(--accent-soft); color: var(--accent); }
+.card2 .tt { font-weight: 600; font-size: 14.5px; }
+.card2 .dd { font-size: 13px; color: var(--mute); }
+.card2 .chgd { font-size: 12px; font-weight: 600; color: var(--accent); }
+.card2 a { font-size: 12.5px; }
+.card2 .soon { font-size: 12px; color: var(--mute); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--mute); margin-top: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+@media (max-width: 980px) { .calgrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .calw { padding-inline: 16px; } .day { min-height: 54px; padding: 4px; } .ev { font-size: 0; height: 6px; padding: 0; } .month .dow { padding: 6px 4px; font-size: 10px; } .calbar .mnav { margin-left: 0; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand" id="brand"></div>
+    <button type="button" class="askopen" id="askopen" aria-expanded="false" aria-controls="askpane">Ask</button>
+    <div class="docs" id="docs" role="group" aria-label="Document"></div>
+  </header>
+  <nav class="side" id="side" aria-label="Versions and outline"><section class="pick" id="pick"></section><div class="toc" id="toc"></div><div class="grip" id="grip" title="Drag to resize"></div></nav>
+  <main class="main" id="main">
+    <div class="bar"><div class="bar-in" id="bar"></div></div>
+    <article class="doc" id="doc"></article>
+  </main>
+</div>
+<aside class="askpane" id="askpane" aria-label="Ask the documents">
+  <div class="askhead"><b>Ask</b><span>Answers come from the open document.</span><button type="button" class="ib" id="askclose" aria-label="Close" style="margin-left:auto">&#10005;</button></div>
+  <form class="askform" id="askform">
+    <textarea id="askq" placeholder="Ask about this notice or manual" aria-label="Question"></textarea>
+    <div class="row">
+      <select id="askprovider" aria-label="Generation">
+        <option value="anthropic">Anthropic API</option>
+        <option value="huggingface">Local Hugging Face</option>
+      </select>
+      <button class="askgo" type="submit">Get answer</button>
+    </div>
+  </form>
+  <div class="askbody" id="askbody"><p class="ai">The same generator that answers questions about the PDFs. Citations open the section they came from.</p></div>
+</aside>
+
+<script>
+// A static page: it loads data/library.json, then each document's JSON files on
+// demand (history, judgments, config). Host the folder anywhere that serves files.
+function boot(D, SUB, CFG, DOCID, signal) {
+const on = (t, ev, fn, opt) => t.addEventListener(ev, fn, { ...(opt || {}), signal });
+const SUM = {};
+const V = D.versions, NV = V.length, TX = D.texts;
+const chapters = D.chapters;
+const chapIndex = Object.fromEntries(chapters.map((c, i) => [c.chapter, i]));
+const S = D.sections.map((s, i) => ({ ...s, i, key: s.chapter + '/' + s.label }));
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
+
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const text = (s, vi) => s.texts[vi] == null ? null : TX[s.texts[vi]];
+const body = t => t == null ? null : t.replace(/^# [^\n]*\n*/, '');
+const shown = t => t == null ? null : t.replace(/^# /, '');
+const skeleton = t => t.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+const noUrls = t => t.replace(/<https?:\/\/[^>]*>/g, '');
+const noImages = t => noUrls(t).replace(/\[Image: [^\]]*\]/g, '');
+const noLinks = t => noUrls(t).replace(/\[[^\]]*\]/g, '');
+const MINOR = new Set(['Formatting only', 'Link address only', 'Image description only']);
+
+// Content tokens: the words of the text, ignoring line breaks, spacing,
+// punctuation-only marks, link addresses and figure descriptions. Those are
+// kept as display-only attachments on the nearest word, never compared.
+const KEY = w => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+const ctCache = new Map();
+function contentTokens(t) {
+  t = t ?? '';
+  if (ctCache.has(t)) return ctCache.get(t);
+  const src = t.replace(/(\p{L})- (\p{L})/gu, '$1-$2');
+  const toks = []; let nl = 0, inImg = false, lead = [];
+  for (const line of src.split('\n')) {
+    for (const w of line.split(/ +/)) {
+      if (w === '') continue;
+      let content = true, kind = 'punct';
+      if (/^<https?:\/\//.test(w)) { content = false; kind = 'url'; }
+      if (w.startsWith('[Image:')) inImg = true;
+      if (inImg) { content = false; kind = 'img'; if (w.includes(']')) inImg = false; }
+      const k = content ? KEY(w) : '';
+      const item = { w, nl, kind };
+      nl = 0;
+      // Marks that start a line (bullets, table borders) belong to the line they begin.
+      if (k) { toks.push({ k, w, nl: item.nl, pre: lead, post: [] }); lead = []; }
+      else if (toks.length && item.nl === 0 && !lead.length) toks[toks.length - 1].post.push(item);
+      else lead.push(item);
+    }
+    nl++;
+  }
+  let first = [];
+  if (toks.length) { first = toks[0].pre; toks[0].pre = []; if (lead.length) toks[toks.length - 1].post.push(...lead); }
+  else first = lead;
+  const r = { toks, lead: first, key: toks.map(x => x.k).join(' ') };
+  ctCache.set(t, r);
+  return r;
+}
+function classify(a, b) {
+  if (a == null && b == null) return 'Absent';
+  if (a == null) return 'Added';
+  if (b == null) return 'Removed';
+  if (a === b) return 'Unchanged';
+  if (contentTokens(a).key === contentTokens(b).key) {
+    if (skeleton(noUrls(a)) === skeleton(noUrls(b)) && skeleton(a) !== skeleton(b)) return 'Link address only';
+    if (skeleton(noImages(a)) === skeleton(noImages(b)) && skeleton(noUrls(a)) !== skeleton(noUrls(b))) return 'Image description only';
+    return 'Formatting only';
+  }
+  if (skeleton(a) === skeleton(b)) return 'Formatting only';
+  if (skeleton(noUrls(a)) === skeleton(noUrls(b))) return 'Link address only';
+  if (skeleton(noImages(a)) === skeleton(noImages(b))) return 'Image description only';
+  if (skeleton(noLinks(a)) === skeleton(noLinks(b))) return 'Cross-reference updated';
+  return 'Modified';
+}
+const kindClass = k => k === 'Added' ? 'added' : k === 'Removed' ? 'removed' : MINOR.has(k) ? 'minor' : (k === 'Unchanged' || k === 'Absent') ? 'same' : 'modified';
+
+
+// ---------- diff: paragraphs first, then words inside changed paragraphs ----------
+function myers(a, b, maxD) {
+  const n = a.length, m = b.length, max = n + m, off = max + 1;
+  const v = new Int32Array(2 * max + 3).fill(-1); v[off + 1] = 0;
+  const trace = [];
+  for (let d = 0; d <= Math.min(max, maxD); d++) {
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1])) ? v[off + k + 1] : v[off + k - 1] + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) { x++; y++; }
+      v[off + k] = x;
+      if (x >= n && y >= m) { trace.push(v.slice(off - d, off + d + 1)); return backtrack(trace, a, b); }
+    }
+    trace.push(v.slice(off - d, off + d + 1));
+  }
+  return null;
+}
+function backtrack(trace, a, b) {
+  const ops = []; let x = a.length, y = b.length;
+  for (let d = trace.length - 1; d > 0; d--) {
+    const vp = trace[d - 1], get = k => vp[k + (d - 1)];
+    const k = x - y;
+    const pk = (k === -d || (k !== d && get(k - 1) < get(k + 1))) ? k + 1 : k - 1;
+    const px = get(pk), py = px - pk;
+    while (x > px && y > py) { ops.push(['=', a[x - 1]]); x--; y--; }
+    if (pk === k + 1) ops.push(['+', b[py]]); else ops.push(['-', a[px]]);
+    x = px; y = py;
+  }
+  while (x > 0 && y > 0) { ops.push(['=', a[x - 1]]); x--; y--; }
+  return ops.reverse();
+}
+// Same algorithm, returning positions: ['=', i, j], ['-', i], ['+', j].
+function myersIdx(a, b, maxD) {
+  const n = a.length, m = b.length, max = n + m, off = max + 1;
+  const v = new Int32Array(2 * max + 3).fill(-1); v[off + 1] = 0;
+  const trace = [];
+  for (let d = 0; d <= Math.min(max, maxD); d++) {
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1])) ? v[off + k + 1] : v[off + k - 1] + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) { x++; y++; }
+      v[off + k] = x;
+      if (x >= n && y >= m) {
+        trace.push(v.slice(off - d, off + d + 1));
+        const ops = []; let X = n, Y = m;
+        for (let dd = trace.length - 1; dd > 0; dd--) {
+          const vp = trace[dd - 1], get = kk => vp[kk + (dd - 1)], kk = X - Y;
+          const pk = (kk === -dd || (kk !== dd && get(kk - 1) < get(kk + 1))) ? kk + 1 : kk - 1;
+          const px = get(pk), py = px - pk;
+          while (X > px && Y > py) { ops.push(['=', X - 1, Y - 1]); X--; Y--; }
+          if (pk === kk + 1) ops.push(['+', py]); else ops.push(['-', px]);
+          X = px; Y = py;
+        }
+        while (X > 0 && Y > 0) { ops.push(['=', X - 1, Y - 1]); X--; Y--; }
+        return ops.reverse();
+      }
+    }
+    trace.push(v.slice(off - d, off + d + 1));
+  }
+  return null;
+}
+function contentDiff(a, b) {
+  const A = contentTokens(a), B = contentTokens(b);
+  const ka = A.toks.map(t => t.k), kb = B.toks.map(t => t.k);
+  const ops = myersIdx(ka, kb, 3000) || [...ka.map((_, i) => ['-', i]), ...kb.map((_, j) => ['+', j])];
+  return { A, B, ops };
+}
+// side: 'red' (both), 'left' (before only), 'right' (after only)
+function renderContent(cd, side) {
+  const units = [];
+  // Link markers and figure descriptions never carry change styling: they are
+  // shown plainly next to added words and left out next to deleted ones.
+  const addTok = (t, wrap, lead) => {
+    (lead || []).concat(t.pre, [{ w: t.w, nl: t.nl }], t.post).forEach(u => {
+      const plainItem = u.kind === 'url' || u.kind === 'img';
+      if (plainItem && wrap === 'del' && side === 'red') return;
+      units.push({ nl: u.nl, h: token(u.w), wrap: plainItem ? '' : wrap });
+    });
+  };
+  let firstA = true, firstB = true;
+  for (const op of cd.ops) {
+    if (op[0] === '=') { const useA = side === 'left'; const t = useA ? cd.A.toks[op[1]] : cd.B.toks[op[2]]; const lead = useA ? (firstA ? cd.A.lead : null) : (firstB ? cd.B.lead : null); addTok(t, '', lead); firstA = firstB = false; }
+    else if (op[0] === '-') { if (side === 'right') continue; addTok(cd.A.toks[op[1]], side === 'left' ? 'del' : 'del', firstA ? cd.A.lead : null); firstA = false; }
+    else { if (side === 'left') continue; addTok(cd.B.toks[op[1]], 'ins', firstB ? cd.B.lead : null); firstB = false; }
+  }
+  let html = '', open = '';
+  units.forEach((u, i) => {
+    if (u.nl > 0 || i === 0) { if (open) { html += `</${open}>`; open = ''; } if (i) html += '\n'.repeat(Math.min(u.nl, 2)); }
+    else if (u.wrap !== open) { if (open) html += `</${open}>`; html += ' '; open = ''; }
+    else html += ' ';
+    if (u.wrap && u.wrap !== open) { html += `<${u.wrap}>`; open = u.wrap; }
+    html += u.h;
+  });
+  if (open) html += `</${open}>`;
+  return finish(html);
+}
+function finish(html) {
+  html = html.replace(/\n{3,}/g, '\n\n').trim();
+  html = html.replace(/\[Image: ([^\]<]*)\]/g, '<span class="img">[Figure: $1]</span>');
+  html = html.replace(/(^|[\s>(])\*([^*\n<>]+)\*(?=[\s<.,;:)]|$)/g, '$1<em>$2</em>');
+  return tables(html);
+}
+const words = line => line.split(/ +/).filter(w => w !== '');
+function wordDiff(A, B) {
+  // A, B: arrays of paragraphs. Returns [type, token] with type '=', '-', '+' or 'nl'.
+  const flat = ps => { const t = []; ps.forEach((p, i) => { if (i) t.push('\n'); t.push(...words(p)); }); return t; };
+  const a = flat(A), b = flat(B);
+  const r = myers(a, b, 1200);
+  if (r) return r.map(([o, t]) => t === '\n' ? ['nl', '\n', o] : [o, t]);
+  return [...a.map(t => t === '\n' ? ['nl', '\n', '-'] : ['-', t]), ['nl', '\n', '+'], ...b.map(t => t === '\n' ? ['nl', '\n', '+'] : ['+', t])];
+}
+function diff(ta, tb) {
+  const A = (ta ?? '').split('\n'), B = (tb ?? '').split('\n');
+  const lines = myers(A, B, 4000) || [...A.map(l => ['-', l]), ...B.map(l => ['+', l])];
+  const out = []; let da = [], db = [];
+  const flush = () => {
+    if (!da.length && !db.length) return;
+    if (out.length) out.push(['nl', '\n', '=']);
+    if (da.length && db.length) out.push(...wordDiff(da, db));
+    else if (da.length) da.forEach((p, i) => { if (i) out.push(['nl', '\n', '-']); words(p).forEach(w => out.push(['-', w])); });
+    else db.forEach((p, i) => { if (i) out.push(['nl', '\n', '+']); words(p).forEach(w => out.push(['+', w])); });
+    da = []; db = [];
+  };
+  for (const [o, l] of lines) {
+    if (o === '=') { flush(); if (out.length) out.push(['nl', '\n', '=']); words(l).forEach(w => out.push(['=', w])); }
+    else if (o === '-') da.push(l); else db.push(l);
+  }
+  flush();
+  return out;
+}
+
+// ---------- rendering ----------
+function token(w) {
+  const m = w.match(/^<(https?:\/\/[^>]*)>([.,;:)\]]*)$/);
+  if (m) return `<a class="url" href="${esc(m[1])}" title="${esc(m[1])}" target="_blank" rel="noopener">link&#8599;</a>${esc(m[2])}`;
+  return esc(w);
+}
+// show: which op types to display. Returns HTML with <del>/<ins> and newlines.
+function renderOps(ops, show) {
+  let html = '', cur = null, buf = [];
+  const close = () => { if (!buf.length) return; const t = buf.join(' '); html += cur === '-' ? `<del>${t}</del>` : cur === '+' ? `<ins>${t}</ins>` : t; buf = []; };
+  let needSpace = false;
+  for (const op of ops) {
+    const [o, w, side] = op;
+    if (o === 'nl') { if (!show.includes(side === '=' ? '=' : side)) continue; close(); cur = null; html += '\n'; needSpace = false; continue; }
+    if (!show.includes(o)) continue;
+    if (o !== cur) { close(); if (needSpace) html += ' '; cur = o; }
+    buf.push(token(w)); needSpace = true;
+  }
+  close();
+  html = html.replace(/\n{3,}/g, '\n\n').trim();
+  html = html.replace(/\[Image: ([^\]<]*)\]/g, '<span class="img">[Figure: $1]</span>');
+  html = html.replace(/(^|[\s>(])\*([^*\n<>]+)\*(?=[\s<.,;:)]|$)/g, '$1<em>$2</em>');
+  return tables(html);
+}
+// Markdown pipe tables -> HTML tables, keeping <del>/<ins> balanced across cells.
+function tables(html) {
+  const lines = html.split('\n');
+  const plain = lines.map(l => l.replace(/<[^>]+>/g, '').trim());
+  const isRow = plain.map(p => p.startsWith('|'));
+  const isSep = plain.map((p, i) => isRow[i] && /^\|[-:| ]+\|?$/.test(p));
+  const out = []; let i = 0;
+  while (i < lines.length) {
+    if (!isRow[i]) { out.push(lines[i]); i++; continue; }
+    let j = i;
+    while (j + 1 < lines.length && (isRow[j + 1] || (plain[j + 1] === '' && j + 2 < lines.length && isRow[j + 2]))) j++;
+    let open = '', rows = [], first = true;
+    for (let k = i; k <= j; k++) {
+      if (!isRow[k] || isSep[k]) continue;
+      let cells = lines[k].split('|');
+      const blank = c => c.replace(/<\/?(del|ins)>/g, '').trim() === '';
+      if (cells.length && blank(cells[0])) { const lead = cells.shift(); if (cells.length) cells[0] = lead + cells[0]; }
+      if (cells.length && blank(cells[cells.length - 1])) { const tl = cells.pop(); if (cells.length) cells[cells.length - 1] += tl; }
+      const tag = first ? 'th' : 'td'; first = false;
+      rows.push('<tr>' + cells.map(c => {
+        let b = (open ? `<${open}>` : '') + c;
+        const tags = b.match(/<\/?(del|ins)>/g) || [];
+        let now = ''; tags.forEach(t => { now = t.startsWith('</') ? '' : t.slice(1, -1); });
+        open = now; if (now) b += `</${now}>`;
+        return `<${tag}>${b.trim()}</${tag}>`;
+      }).join('') + '</tr>');
+    }
+    out.push(`<div class="tbl"><table>${rows.join('')}</table></div>`);
+    i = j + 1;
+  }
+  return out.join('\n');
+}
+function highlight(root, q) {
+  if (!q) return;
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    if (!re.test(n.nodeValue)) return; re.lastIndex = 0;
+    const span = document.createElement('span');
+    span.innerHTML = esc(n.nodeValue).replace(new RegExp(esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`);
+    n.replaceWith(...span.childNodes);
+  });
+}
+
+
+
+
+
+// ---------- what is being compared ----------
+// One reader for every document. The config says how this document names its
+// versions, where its official copies live, and which comparisons have judgments.
+const MANUAL = CFG.kind === 'manual';
+const vDate = vi => { const d = (CFG.dates && CFG.dates[V[vi]]) || (D.version_dates && D.version_dates[V[vi]]); if (!d) return ''; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : d; };
+const vNum = vi => V[vi].replace(new RegExp(CFG.strip), '');
+const vName = vi => CFG.prefix + vNum(vi);
+const noun = CFG.noun;   // "notice" or "version"
+// Official copy of a version: the BHIN's PDF (at a page), or the manual's web page (at a section).
+function srcLink(vi, s) {
+  if (!MANUAL) { const p = s && s.pages && s.pages[vi]; return CFG.pdf[V[vi]] + (p ? '#page=' + p : ''); }
+  const base = CFG.host + (vi === V.length - 1 ? 'LIVE' : V[vi]) + '/';
+  if (!s) return base + CFG.firstSlug;
+  const t = text(s, vi) ?? text(s, TO) ?? text(s, FROM);
+  const heading = t ? t.split('\n')[0].replace(/^# /, '') : '';
+  return base + s.slug + (s.label === '_chapter' ? '' : '#' + encodeURI(heading.replace(/ /g, '-')));
+}
+const srcName = CFG.srcName;   // "PDF" or "DHCS site"
+const FRONT = CFG.front || [];
+const shownLabel = l => l.replace(/~(\d+)$/, ' (repeat)').replace(/^_chapter\//, '').replace(/^Appendix-([A-Z])\/?/, (m, x) => 'App. ' + x + (m.endsWith('/') ? '.' : ''));
+const secLabel = s => FRONT.includes(s.label) || s.label === '_chapter' ? '' : shownLabel(s.label);
+// A heading's title without its number: "c. Time or Distance" and "C.3.1 How ..." both lose the number.
+function bare(s, t) {
+  if (t == null) return null;
+  if (FRONT.includes(s.label) || s.label === '_chapter') return t;
+  const m = t.match(/^(\S+?)\.?\s+(.*)$/);
+  if (!m) return t;
+  const last = s.label.replace(/~\d+$/, '').split(/[./]/).pop();
+  return m[1] === s.label.replace(/~\d+$/, '') || m[1] === last || /^[IVXivx]+$|^[a-z]$/.test(m[1]) ? m[2] : t;
+}
+const AREAS = CFG.areas || [];
+const $ = id => document.getElementById(id);
+
+function changedSteps(s, a, b) {
+  const out = [];
+  for (let k = a; k < b; k++) {
+    const kind = classify(text(s, k), text(s, k + 1));
+    if (!(kind === 'Unchanged' || kind === 'Absent' || MINOR.has(kind))) out.push(k + 1);
+  }
+  return out;
+}
+// The judgment for a comparison: written for each step in the chain; over a longer
+// comparison, a section that changed in only one step takes that step's judgment.
+// The manual's judgments were written for one comparison only (CFG.judged).
+const judgedPair = (a, b) => !CFG.judged || (V[a] === CFG.judged.from && CFG.judged.to.includes(V[b]));
+function judgment(s, a, b) {
+  if (CFG.judged) return judgedPair(a, b) ? SUB[s.key] || null : null;
+  const direct = SUB[`${s.key}|${V[a]}|${V[b]}`];
+  if (direct) return direct;
+  const steps = changedSteps(s, a, b);
+  return steps.length === 1 ? SUB[`${s.key}|${V[steps[0] - 1]}|${V[steps[0]]}`] || null : null;
+}
+
+const st = { minor: 'faint', nav: 'sub', clean: false, area: '', cur: -1, showAll: false, sbs: new Set() };
+let FROM, TO, DOC = [], TARGETS = [], ROUNDTRIP = [], REVIEWED = true;
+
+function setPair(a, b) {
+  if (a > b) [a, b] = [b, a];
+  if (a === b) { if (b < V.length - 1) b++; else a--; }
+  FROM = a; TO = b; st.cur = -1; st.sbs.clear();
+  const ci = c => { const k = D.chapters.findIndex(x => x.chapter === c); return k < 0 ? 999 : k; };
+  DOC = S.filter(s => (MANUAL || s.label !== '_chapter') && (s.texts[FROM] != null || s.texts[TO] != null))
+    .sort((x, y) => ci(x.chapter) - ci(y.chapter) || (x.label === '_chapter' ? -1 : 0) - (y.label === '_chapter' ? -1 : 0) || (x.order ?? 999) - (y.order ?? 999));
+  const reviewed = !!SUB && (CFG.judged ? judgedPair(a, b) : true);
+  DOC.forEach(s => {
+    s.a = text(s, FROM); s.b = text(s, TO); s.kind = classify(s.a, s.b);
+    s.steps = changedSteps(s, FROM, TO);
+    const j = judgment(s, FROM, TO);
+    s.state = s.kind === 'Unchanged' || s.kind === 'Absent' ? 'same' : MINOR.has(s.kind) ? 'fmt' : !reviewed ? 'chg' : (j && j.level === 'Substantive' ? 'sub' : 'minor');
+    s.areas = j && s.state === 'sub' ? j.areas : [];
+    s.why = j ? j.why : '';
+    s.title0 = s.a ? s.a.split('\n')[0].replace(/^# /, '') : null;
+    s.title1 = s.b ? s.b.split('\n')[0].replace(/^# /, '') : null;
+  });
+  REVIEWED = reviewed;
+  ROUNDTRIP = DOC.filter(s => (s.state === 'same' || s.state === 'fmt') && s.steps.length);
+  window.__tracker = { FROM: V[FROM], TO: V[TO], changed: DOC.filter(s => s.state !== 'same').map(s => ({ key: s.key, kind: s.kind, state: s.state, areas: s.areas, steps: s.steps.map(k => V[k]) })), roundtrip: ROUNDTRIP.map(s => s.key) };
+}
+function computeTargets() {
+  TARGETS = DOC.filter(s => st.nav === 'minor' && REVIEWED ? s.state === 'minor' : (s.state === 'sub' || s.state === 'chg'));
+}
+const quiet = s => s.state === 'minor';
+const marks = s => !st.clean && (s.state === 'sub' || s.state === 'chg' || (s.state === 'minor' && st.minor !== 'off'));
+
+// ---------- rendering one section ----------
+function plain(t) { const cd = contentDiff(t ?? '', t ?? ''); return renderContent(cd, 'right'); }
+// A blank line between paragraphs becomes a half-line gap instead of a full empty line.
+function sectionBody(s) {
+  const html = sectionBody0(s);
+  const note = calloutHTML(s);
+  if (st.sbs.has(s.i)) return `<div class="pp">${note}${html}</div>`;
+  const paras = html.split(/\n\n+/).filter(p => p.trim() !== '');
+  const changed = p => /<(del|ins)\b|class="tbl t(del|ins)/.test(p);
+  let placed = !note;
+  const out = paras.map(p => {
+    const c = marks(s) && changed(p);
+    const pre = !placed && c ? (placed = true, note) : '';
+    return `<div class="pp${c ? ' cb' : ''}">${pre}${p}</div>`;
+  }).join('');
+  if (placed || !note) return out;
+  return out.replace('<div class="pp">', '<div class="pp">' + note);
+}
+function sectionBody0(s) {
+  const a = body(s.a), b = body(s.b);
+  const marked = marks(s);
+  if (st.sbs.has(s.i) && s.state !== 'same') {
+    const cd = contentDiff(a ?? '', b ?? '');
+    return `<div class="cols"><div><div class="colh">${vName(FROM)}${pageLink(s, FROM)}</div>${a == null ? `<span class="img">Not in this ${noun}.</span>` : renderContent(cd, 'left')}</div><div><div class="colh">${vName(TO)}${pageLink(s, TO)}</div>${b == null ? `<span class="img">Not in this ${noun}.</span>` : renderContent(cd, 'right')}</div></div>`;
+  }
+  if (!marked) return plain(b ?? a);
+  return blockDiff(a ?? '', b ?? '');
+}
+// Prose is compared word by word. Tables are compared as tables: a table DHCS
+// revised is matched row by row and cell by cell; a table it replaced is shown
+// struck out whole, followed by the new table, instead of a mix of words.
+const isTable = blk => blk.startsWith('|');
+const blocks = t => t.split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
+const tkey = t => contentTokens(t).key;
+function similarity(x, y) {
+  const a = new Set(tkey(x).split(' ')), b = new Set(tkey(y).split(' '));
+  let n = 0; a.forEach(w => { if (b.has(w)) n++; });
+  return n / Math.max(1, a.size + b.size - n);
+}
+function rows(t) { return t.split('\n').filter(l => l.startsWith('|') && !/^\|[-:| ]+\|?$/.test(l)).map(l => l.replace(/^\|\s?|\s?\|$/g, '').split(' | ').map(c => c.trim())); }
+const cellHTML = (x, y) => renderContent(contentDiff(x ?? '', y ?? ''), x == null ? 'right' : y == null ? 'left' : 'red').replace(/^<div class="tbl">|<\/div>$/g, '');
+const cellPlain = c => cellHTML(c, c);
+function tableHTML(rs, mode, other) {
+  // mode: 'same' | 'del' | 'ins' | 'diff' (rs = paired rows [[oldRow|null, newRow|null], ...])
+  const cls = mode === 'del' ? ' tdel' : mode === 'ins' ? ' tins' : '';
+  const body = rs.map((r, k) => {
+    const tag = k === 0 ? 'th' : 'td';
+    if (mode !== 'diff') return '<tr>' + r.map(c => `<${tag}>${cellPlain(c)}</${tag}>`).join('') + '</tr>';
+    const [o, n] = r;
+    if (!o) return '<tr class="rins">' + n.map(c => `<${tag}><ins>${cellPlain(c)}</ins></${tag}>`).join('') + '</tr>';
+    if (!n) return '<tr class="rdel">' + o.map(c => `<${tag}><del>${cellPlain(c)}</del></${tag}>`).join('') + '</tr>';
+    const w = Math.max(o.length, n.length);
+    let cells = '';
+    for (let c = 0; c < w; c++) cells += `<${tag}>${o[c] === n[c] ? cellPlain(n[c] ?? '') : cellHTML(o[c] ?? '', n[c] ?? '')}</${tag}>`;
+    return '<tr>' + cells + '</tr>';
+  }).join('');
+  return `<div class="tbl${cls}"><table>${body}</table></div>`;
+}
+function tableDiff(x, y) {
+  const A = rows(x), B = rows(y);
+  const ka = A.map(r => tkey(r[0] || '')), kb = B.map(r => tkey(r[0] || ''));
+  const ops = myersIdx(ka, kb, 2000) || [];
+  const out = []; let dels = [], adds = [];
+  const flush = () => {
+    // Pair removed and added rows that are the same row reworded.
+    while (dels.length || adds.length) {
+      const o = dels[0], n = adds[0];
+      if (o && n && o.length === n.length && similarity(o.join(' '), n.join(' ')) >= 0.35) { out.push([dels.shift(), adds.shift()]); }
+      else if (o) out.push([dels.shift(), null]); else out.push([null, adds.shift()]);
+    }
+  };
+  for (const op of ops) {
+    if (op[0] === '=') { flush(); out.push([A[op[1]], B[op[2]]]); }
+    else if (op[0] === '-') dels.push(A[op[1]]); else adds.push(B[op[1]]);
+  }
+  flush();
+  return tableHTML(out, 'diff');
+}
+function blockDiff(a, b) {
+  const A = blocks(a), B = blocks(b);
+  const ops = myersIdx(A.map(tkey), B.map(tkey), 2000) || [...A.map((_, i) => ['-', i]), ...B.map((_, j) => ['+', j])];
+  const parts = []; let da = [], db = [];
+  const prose = (x, y) => { if (x.length || y.length) parts.push(renderContent(contentDiff(x.join('\n\n'), y.join('\n\n')), 'red')); };
+  const flush = () => {
+    const ta = da.filter(isTable), tb = db.filter(isTable);
+    if (!ta.length && !tb.length) { prose(da, db); da = []; db = []; return; }
+    // Walk the run in order; tables pair with tables, prose with prose.
+    let px = [], py = [];
+    const ia = [...da], ib = [...db];
+    while (ia.length || ib.length) {
+      if (ia.length && !isTable(ia[0])) { px.push(ia.shift()); continue; }
+      if (ib.length && !isTable(ib[0])) { py.push(ib.shift()); continue; }
+      prose(px, py); px = []; py = [];
+      const x = ia.shift(), y = ib.shift();
+      if (x && y && similarity(x, y) >= 0.5 && rows(x)[0]?.length === rows(y)[0]?.length) parts.push(tableDiff(x, y));
+      else { if (x) parts.push(tableHTML(rows(x), 'del')); if (y) parts.push(tableHTML(rows(y), 'ins')); }
+    }
+    prose(px, py);
+    da = []; db = [];
+  };
+  for (const op of ops) {
+    if (op[0] === '=') { flush(); const blk = B[op[2]]; parts.push(isTable(blk) ? tableHTML(rows(blk), 'same') : renderContent(contentDiff(blk, blk), 'right')); }
+    else if (op[0] === '-') da.push(A[op[1]]); else db.push(B[op[1]]);
+  }
+  flush();
+  return parts.join('\n\n');
+}
+function pageLink(s, vi) {
+  if (MANUAL) return text(s, vi) != null ? ` &middot; <a href="${esc(srcLink(vi, s))}" target="_blank" rel="noopener">${srcName}&#8599;</a>` : '';
+  const p = s.pages && s.pages[vi]; return p ? ` &middot; <a href="${esc(srcLink(vi, s))}" target="_blank" rel="noopener">p.${p}&#8599;</a>` : '';
+}
+function headingHTML(s) {
+  const lvl = s.label === '_chapter' ? 1 : Math.min(Math.max(s.level || 2, 2), 6);
+  const lab = secLabel(s);
+  const strip = t => bare(s, t);
+  let title = esc(strip(s.title1 ?? s.title0) || s.title);
+  const marked = marks(s);
+  if (marked && s.title0 && s.title1 && s.title0 !== s.title1) {
+    const cd = contentDiff(strip(s.title0), strip(s.title1));
+    title = renderContent(cd, 'red');
+  }
+  if (s.a != null && s.b == null && !st.clean) title = `<del>${title}</del>`;
+  if (s.a == null && s.b != null && !st.clean) title = `<ins>${title}</ins>`;
+  return `<h${lvl} class="h h${lvl}">${lab ? `<span class="lab">${esc(lab)}</span>` : ''}${title}</h${lvl}>`;
+}
+function calloutHTML(s) {
+  if (st.clean) return '';
+  const sbs = `<button data-sbs="${s.i}">${st.sbs.has(s.i) ? 'Back to redline' : 'Side by side'}</button>`;
+  const when = TO - FROM > 1 && s.steps.length ? `Changed in ${s.steps.map(vNum).join(', ')}` : '';
+  const was = s.labels && s.labels[FROM] && s.labels[TO] && s.labels[FROM] !== s.labels[TO] ? `was ${shownLabel(s.labels[FROM])}` : '';
+  const isNew = s.a == null ? 'New section' : s.b == null ? 'Removed' : '';
+  const meta = [isNew, was, when].filter(Boolean).map(esc).join(' · ');
+  if (s.state === 'sub') return `<div class="callout" id="c${s.i}"><div class="tl">Substantive change${meta ? `<span>${meta}</span>` : ''}</div><p>${esc(s.why)}</p><div class="ln">${sbs}</div></div>`;
+  if (s.state === 'chg') return `<div class="callout" id="c${s.i}"><div class="tl">Changed${meta ? `<span>${meta}</span>` : ''}</div><p style="color:var(--mute)">Not yet reviewed for substance (reviewed: ${esc(CFG.judgedLabel)}).</p><div class="ln">${sbs}</div></div>`;
+  if (s.state === 'minor') return `<div class="callout quiet" id="c${s.i}"><div class="tl">Minor edit${meta ? `<span>${meta}</span>` : ''}</div><p>${esc(s.why || 'Wording only.')}</p><div class="ln">${sbs}</div></div>`;
+  if (s.steps.length) return `<div class="callout back" id="c${s.i}"><div class="tl">Changed, then changed back</div><p>Changed in ${s.steps.map(vNum).join(' and ')}; the wording here is the same as in ${esc(vNum(FROM))}.</p><div class="ln"><button data-pair="${s.steps[0] - 1}~${s.steps[0]}~${s.i}">See the first change</button></div></div>`;
+  return '';
+}
+function noteHTML(s) {
+  if (st.clean) return '';
+  if (s.state === 'chg') {
+    const isNew = s.a == null ? 'New section' : s.b == null ? 'Removed' : '';
+    return `<div class="card"><div class="tl">Changed${isNew ? ' · ' + isNew : ''}</div><p style="color:var(--mute)">Not yet reviewed for substance. Reviewed comparisons: ${esc(CFG.judgedLabel)}.</p><div class="ln">${TO - FROM > 1 && s.steps.length ? `<span>Changed in ${s.steps.map(vNum).join(', ')}</span>` : ''}<button data-sbs="${s.i}">${st.sbs.has(s.i) ? 'Back to redline' : 'Side by side'}</button></div></div>`;
+  }
+  if (s.state === 'sub' || s.state === 'minor') {
+    const was = s.labels && s.labels[FROM] && s.labels[TO] && s.labels[FROM] !== s.labels[TO] ? `Was ${esc(shownLabel(s.labels[FROM]))}` : '';
+    const when = TO - FROM > 1 && s.steps.length ? `Changed in ${s.steps.map(vNum).join(', ')}` : '';
+    const isNew = s.a == null ? 'New section' : s.b == null ? 'Removed' : '';
+    return `<div class="card"><div class="tl">${s.state === 'sub' ? 'Substantive' : 'Minor edit'}</div><p>${esc(s.why || 'Wording changes only.')}</p><div class="ln">${[isNew, was, when].filter(Boolean).map(esc).map(x => `<span>${x}</span>`).join('')}<button data-sbs="${s.i}">${st.sbs.has(s.i) ? 'Back to redline' : 'Side by side'}</button></div></div>`;
+  }
+  if (s.steps.length) return `<div class="card"><div class="tl" style="color:var(--mute)">Changed, then changed back</div><p style="color:var(--mute)">Changed in ${s.steps.map(vNum).join(' and ')}; the wording here is the same as in ${vNum(FROM)}.</p><div class="ln"><button data-pair="${s.steps[0] - 1}~${s.steps[0]}~${s.i}">See the first change</button></div></div>`;
+  return '';
+}
+function sectionHTML(s) {
+  const cls = ['sec', s.state, quiet(s) ? 'quiet' : '', s.b == null ? 'gone' : '', TARGETS[st.cur] === s ? 'cur' : ''].filter(Boolean).join(' ');
+  return `<section class="${cls}" id="s${s.i}" data-i="${s.i}"><div class="txt">${headingHTML(s)}<div class="body">${sectionBody(s)}</div></div></section>`;
+}
+
+// ---------- summary at the top ----------
+// The first sentence of a note, or two if the first is only a lead-in.
+function lead(t) { const ss = t.split(/(?<=\.)\s+(?=[A-Z(])/); return ss[0].length < 50 && ss[1] ? ss[0] + ' ' + ss[1] : ss[0]; }
+function summaryHTML() {
+  const subs = DOC.filter(s => s.state === 'sub' || s.state === 'chg'), minors = DOC.filter(s => s.state === 'minor');
+  const subject = CFG.docTitle || (S.find(s => s.label === '_chapter') || {}).heading || CFG.topic;
+  const cur = V.length - 1;
+  const shown = st.showAll ? subs : subs.slice(0, 3);
+  const item = s => `<li><button data-go="${s.i}"><span class="l">${esc(secLabel(s) || (s.label === '_chapter' ? 'Ch. ' + (s.title1 || s.title).split('.')[0] : s.title))}</span><span class="t">${esc(s.why ? lead(s.why) : bare(s, s.title1 ?? s.title0 ?? s.title))}</span>${MANUAL ? `<span class="a">${esc(chapName(s.chapter))}</span>` : ''}</button></li>`;
+  return `<div class="sum">
+    <div>
+      <div class="eyebrow"><span>${vName(TO)} &middot; ${CFG.issued} ${vDate(TO)}${TO === cur ? ' &middot; current' : ` &middot; superseded by ${vName(TO + 1)}`}</span><a href="${esc(srcLink(TO))}" target="_blank" rel="noopener">${srcName}&#8599;</a></div>
+      <h1>${esc(subject)}</h1>
+      <div class="counts">${REVIEWED ? `<b>${subs.length}</b> substantive changes &middot; <b>${minors.length}</b> minor edits` : `<b>${subs.length}</b> changed sections`}</div>
+      <div class="chain" style="margin-top:6px">${esc(CFG.chainLabel)}: ${(CFG.before ? [esc(CFG.before.bhin)] : []).concat(V.map((v, vi) => vi === FROM || vi === TO ? `<b>${esc(vNum(vi))}</b>` : esc(vNum(vi)))).join(' → ')}</div>
+      <h2 class="sumh">${REVIEWED ? 'Summary of key changes <span class="ai">Example AI summary &middot; needs review</span>' : `Changed sections <span class="ai">Not reviewed for substance &middot; reviewed: ${esc(CFG.judgedLabel)}</span>`}</h2>
+      <ul class="chg">${shown.map(item).join('')}</ul>
+      ${subs.length > 3 ? `<button class="more" id="more">${st.showAll ? 'Show fewer' : `Show all ${subs.length} ${REVIEWED ? 'substantive changes' : 'changed sections'}`}</button>` : ''}
+      ${ROUNDTRIP.length ? `<p class="rt">Changed along the way, then changed back: ${ROUNDTRIP.map(s => `<button data-go="${s.i}">${esc((secLabel(s) + ' ' + s.title).trim())}</button>`).join(', ')}.</p>` : ''}
+    </div>
+  </div>`;
+}
+const chapName = c => ((D.chapters.find(x => x.chapter === c) || {}).heading || c);
+
+// ---------- outline ----------
+// The outline is a tree: each section's parent is the nearest section above it
+// with a lower level. Subsections are collapsed until opened; a parent shows the
+// strongest change inside it.
+const open = new Set();
+function tree() {
+  const stack = [];
+  DOC.forEach(s => {
+    s.lvl = s.label === '_chapter' ? 1 : Math.max(s.level || 2, 2);
+    while (stack.length && stack[stack.length - 1].lvl >= s.lvl) stack.pop();
+    s.parent = stack.length ? stack[stack.length - 1] : null;
+    s.kids = [];
+    if (s.parent) s.parent.kids.push(s);
+    stack.push(s);
+  });
+}
+const rank = s => s.state === 'sub' || s.state === 'chg' ? 2 : s.state === 'minor' && st.minor !== 'off' ? 1 : 0;
+const deepRank = s => Math.max(rank(s), ...s.kids.map(deepRank));
+function tocItem(s) {
+  const own = rank(s), inside = s.kids.length ? Math.max(...s.kids.map(deepRank)) : 0;
+  const d = own === 2 ? 'sub' : own === 1 ? 'minor' : inside === 2 ? 'sub in' : inside === 1 ? 'minor in' : '';
+  const t = bare(s, s.title1 ?? s.title0 ?? s.title);
+  const isOpen = open.has(s.i);
+  let depth = 0; for (let p = s.parent; p; p = p.parent) depth++;
+  const tw = s.kids.length ? `<button class="tw" data-tw="${s.i}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Collapse' : 'Expand'} ${esc(t)}">&#9656;</button>` : '<span class="tw"></span>';
+  const hits = SEARCH.per.get(s.i) || 0, inHits = hits || (s.kids.length && !isOpen && kidHits(s));
+  return `<li><div class="row d${Math.min(depth, 5)}${inHits ? ' hit' : ''}">${tw}<a href="#" data-go="${s.i}"${hits ? ` data-hits="${hits}"` : ''}><span class="d ${d}"></span><span class="lb">${esc(secLabel(s))}</span><span class="tt">${esc(t)}</span></a></div>${s.kids.length && isOpen ? `<ul>${s.kids.map(tocItem).join('')}</ul>` : ''}</li>`;
+}
+const kidHits = s => s.kids.some(k => SEARCH.per.get(k.i) || kidHits(k));
+function renderTOC() {
+  const y = $('side').scrollTop;
+  $('toc').innerHTML = `<div class="toch"><h2>Outline</h2><span><button data-all="1">Expand all</button><button data-all="0">Collapse all</button></span></div><ul class="tree">${DOC.filter(s => !s.parent).map(tocItem).join('')}</ul>` +
+    `<div class="key"><span><i class="d sub"></i>${REVIEWED ? 'Substantive change' : 'Changed'}</span><span><i class="d minor"></i>Minor edit</span><span><i class="d sub in"></i>Change inside</span></div>`;
+  $('side').scrollTop = y;
+  const on = spy.last && document.querySelector(`.toc a[data-go="${spy.last}"]`); if (on) on.classList.add('on');
+}
+function reveal(s) { let p = s.parent, changed = false; while (p) { if (!open.has(p.i)) { open.add(p.i); changed = true; } p = p.parent; } if (changed) renderTOC(); }
+
+// ---------- the version picker (left column) ----------
+function renderPick() {
+  const opt = (vi, sel, dis) => `<option value="${vi}" ${vi === sel ? 'selected' : ''} ${dis ? 'disabled' : ''}>${esc(vNum(vi))}${vDate(vi) ? ' · ' + esc(vDate(vi)) : ''}${vi === V.length - 1 ? ' · current' : ''}</option>`;
+  const quick = (CFG.quick || []).map(([a, b, t]) => [V.indexOf(a), V.indexOf(b), t]).filter(q => q[0] >= 0 && q[1] > q[0]);
+  $('pick').innerHTML = `<div class="in"><div class="ph">Compare versions</div>
+    <div class="pair">${esc(vNum(FROM))}<span>&rarr;</span>${esc(vNum(TO))}</div>
+    <label>From<select id="pickA" aria-label="Older ${noun}">${V.map((_, vi) => opt(vi, FROM, vi >= TO)).join('')}</select></label>
+    <label>To<select id="pickB" aria-label="Newer ${noun}">${V.map((_, vi) => opt(vi, TO, vi <= FROM)).join('')}</select></label>
+    <div class="hint">${V.length} ${noun}s on file. Pick any two.</div></div>
+    <div class="dlrow"><select id="dlv" aria-label="Version to download">${V.map((_, vi) => `<option value="${vi}" ${vi === V.length - 1 ? 'selected' : ''}>${esc(vName(vi))}${vi === V.length - 1 ? ' (current)' : ''}</option>`).reverse().join('')}</select><button id="dlgo" class="dlb">Download</button></div>`;
+}
+
+// ---------- the bar ----------
+function renderBar() {
+  const n = TARGETS.length;
+  const nSub = DOC.filter(s => s.state === 'sub' || s.state === 'chg').length, nMin = DOC.filter(s => s.state === 'minor').length;
+  $('bar').innerHTML = `
+    <button class="ib contents" id="contents" aria-label="Versions and outline">&#9776;</button>
+    ${REVIEWED ? `<div class="tg navk" role="group" aria-label="Step through"><button data-nav="sub" aria-pressed="${st.nav === 'sub'}">Substantive <b>${nSub}</b></button><button data-nav="minor" aria-pressed="${st.nav === 'minor'}">Minor edits <b>${nMin}</b></button></div>` : `<span class="lbl">Changes</span>`}
+    <div class="nav"><button class="ib" id="prev" aria-label="Previous">&#8249;</button><span class="pos">${n ? (st.cur >= 0 ? `${st.cur + 1} of ${n}` : `${n}`) : '0'}</span><button class="ib" id="next" aria-label="Next">&#8250;</button></div>
+    <span class="spacer"></span>
+    <div class="search"><input id="q" type="search" placeholder="Search this ${noun}" aria-label="Search" value="${esc(SEARCH.q)}" autocomplete="off"><span class="cnt" id="qcnt"></span><div class="qdrop" id="qdrop" hidden></div></div>
+    <label class="ck"><input type="checkbox" id="clean" ${st.clean ? 'checked' : ''}> Clean text</label>`;
+}
+
+// ---------- margin comments ----------
+function layoutNotes() {
+  const notes = [...document.querySelectorAll('#doc .callout')];
+  if (!notes.length || getComputedStyle(notes[0]).position !== 'absolute') return;
+  notes.forEach(n => n.style.top = '0px');
+  let last = -Infinity;
+  for (const n of notes) {
+    const r = n.getBoundingClientRect();
+    const shift = Math.max(0, last + 12 - r.top);
+    if (shift) n.style.top = shift + 'px';
+    last = r.top + shift + r.height;
+  }
+}
+on(window, 'resize', () => { clearTimeout(layoutNotes.t); layoutNotes.t = setTimeout(layoutNotes, 100); });
+on(document, 'mouseover', e => { const c = e.target.closest('.callout, .pp.cb'); const sec = c && c.closest('.sec'); document.querySelectorAll('.sec.hl').forEach(x => x !== sec && x.classList.remove('hl')); if (sec) sec.classList.add('hl'); });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutNotes());
+
+// ---------- search ----------
+// Search knows about changes. Every match is tagged by where it sits in the
+// redline: added wording, removed wording (which a PDF of the new version cannot
+// show at all), next to a change, or unchanged text. Results replace the outline
+// in the left column; a strip shows how often the term appears in each version.
+const SEARCH = { q: '', all: [], hits: [], cur: -1, per: new Map(), f: 'all', hist: [] };
+const reFor = q => new RegExp('(?<![\\p{L}\\p{N}])' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+function runSearch(keepPos) {
+  document.querySelectorAll('mark.hit').forEach(m => m.replaceWith(...m.childNodes));
+  $('doc').normalize();
+  SEARCH.all = []; SEARCH.per = new Map(); SEARCH.hist = [];
+  const q = SEARCH.q.trim();
+  if (q.length >= 2) {
+    const re = reFor(q);
+    const walk = document.createTreeWalker($('doc'), NodeFilter.SHOW_TEXT, { acceptNode: n => n.parentElement.closest('.sum, .foot, .callout, button, a.url') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+    for (const n of nodes) {
+      const t = n.nodeValue; re.lastIndex = 0; let m, last = 0; const frag = [];
+      while ((m = re.exec(t))) { frag.push(t.slice(last, m.index), m[0]); last = m.index + m[0].length; }
+      if (!frag.length) continue;
+      frag.push(t.slice(last));
+      const parent = n.parentNode, sec = parent.closest('.sec');
+      frag.forEach((piece, k) => {
+        if (k % 2) {
+          const mk = document.createElement('mark'); mk.className = 'hit'; mk.textContent = piece; parent.insertBefore(mk, n);
+          const kind = mk.closest('ins, .tins') ? 'add' : mk.closest('del, .tdel') ? 'del' : mk.closest('.pp.cb') ? 'near' : 'same';
+          SEARCH.all.push({ el: mk, sec: sec ? +sec.dataset.i : -1, kind });
+        } else if (piece) parent.insertBefore(document.createTextNode(piece), n);
+      });
+      parent.removeChild(n);
+    }
+    if (!keepPos) SEARCH.cur = -1;
+  } else SEARCH.f = 'all';
+  applyFilter();
+}
+const inFilter = h => SEARCH.f === 'all' || (SEARCH.f === 'chg' ? h.kind !== 'same' : h.kind === SEARCH.f);
+function applyFilter() {
+  SEARCH.hits = SEARCH.all.filter(inFilter);
+  SEARCH.per = new Map(); SEARCH.hits.forEach(h => SEARCH.per.set(h.sec, (SEARCH.per.get(h.sec) || 0) + 1));
+  SEARCH.all.forEach(h => h.el.classList.toggle('off', !inFilter(h)));
+  if (SEARCH.cur >= SEARCH.hits.length) SEARCH.cur = -1;
+  const c = $('qcnt'); const q = SEARCH.q.trim();
+  if (c) c.textContent = q.length >= 2 ? (SEARCH.hits.length ? (SEARCH.cur >= 0 ? `${SEARCH.cur + 1} of ${SEARCH.hits.length}` : `${SEARCH.hits.length}`) : 'none') : '';
+  renderTOC(); renderDrop(document.activeElement === $('q'));
+}
+// A dropdown under the search box: every section the term appears in, with how often.
+function renderDrop(show) {
+  const d = $('qdrop'); if (!d) return;
+  const q = SEARCH.q.trim();
+  if (q.length < 2 || show === false) { d.hidden = true; return; }
+  const groups = new Map(); SEARCH.hits.forEach((h, k) => { if (!groups.has(h.sec)) groups.set(h.sec, { first: k, n: 0 }); groups.get(h.sec).n++; });
+  d.innerHTML = SEARCH.hits.length
+    ? `<div class="qh"><b>${SEARCH.hits.length}</b> match${SEARCH.hits.length === 1 ? '' : 'es'} in <b>${groups.size}</b> section${groups.size === 1 ? '' : 's'}</div>` +
+      [...groups].map(([si, g]) => { const x = S[si]; if (!x) return ''; return `<button data-hit="${g.first}"><span class="lb">${esc((MANUAL && x.label !== '_chapter' ? (chapName(x.chapter).match(/^\d+/) || ['App'])[0] + ' · ' : '') + secLabel(x))}</span><span class="tt">${esc(bare(x, x.title1 ?? x.title0 ?? x.title))}</span><span class="n">${g.n}</span></button>`; }).join('')
+    : `<div class="qh">No matches for “${esc(q)}”.</div>`;
+  d.hidden = false;
+}
+function gotoHit(k) {
+  const n = SEARCH.hits.length; if (!n) return;
+  SEARCH.cur = (k + n) % n;
+  SEARCH.all.forEach(h => h.el.classList.remove('now'));
+  const m = SEARCH.hits[SEARCH.cur].el; m.classList.add('now');
+  const main = $('main');
+  main.scrollTo({ top: main.scrollTop + m.getBoundingClientRect().top - main.getBoundingClientRect().top - main.clientHeight / 3, behavior: 'smooth' });
+  $('qcnt').textContent = `${SEARCH.cur + 1} of ${n}`;
+}
+function nextHit(d) {
+  const n = SEARCH.hits.length; if (!n) return;
+  if (SEARCH.cur < 0) {
+    const line = $('main').getBoundingClientRect().top + 90;
+    const k = SEARCH.hits.findIndex(h => h.el.getBoundingClientRect().top > line);
+    gotoHit(d > 0 ? (k < 0 ? 0 : k) : (k < 0 ? n : k) - 1);
+  } else gotoHit(SEARCH.cur + d);
+}
+
+// ---------- downloads ----------
+// A BHIN version is DHCS's own PDF. A manual version is assembled from the
+// stored text into one Markdown file (DHCS publishes the manual as web pages).
+function versionMarkdown(vi) {
+  const ci = c => { const k = D.chapters.findIndex(x => x.chapter === c); return k < 0 ? 999 : k; };
+  const secs = S.filter(s => s.texts[vi] != null).sort((x, y) => ci(x.chapter) - ci(y.chapter) || (x.label === '_chapter' ? -1 : 0) - (y.label === '_chapter' ? -1 : 0) || (x.order ?? 999) - (y.order ?? 999));
+  const head = `---\ntitle: ${CFG.docTitle}\nversion: ${vNum(vi)}\nreleased: ${vDate(vi)}\nsource: ${srcLink(vi)}\n---\n\n`;
+  return head + secs.map(s => { const t = text(s, vi); const lv = s.label === '_chapter' ? 1 : Math.min(Math.max(s.level || 2, 2), 6); return '#'.repeat(lv) + ' ' + t.replace(/^# /, ''); }).join('\n\n') + '\n';
+}
+async function download(vi) {
+  if (!MANUAL) { window.open(srcLink(vi), '_blank', 'noopener'); return; }
+  const name = `${CFG.fileStem}-${vNum(vi)}.md`;
+  const data = new TextEncoder().encode(versionMarkdown(vi));
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (dl) { await dl.save({ filename: name, data }); return; }
+  } catch (e) { if (e && e.code === 'declined') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], { type: 'text/markdown' })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ---------- page ----------
+function render(keepScroll) {
+  computeTargets();
+  const y = $('main').scrollTop;
+  $('brand').innerHTML = `Change Tracker<small>${esc(CFG.topic)} &middot; DHCS</small>`;
+  renderPick();
+  document.querySelector('.app').classList.toggle('minor-off', st.minor === 'off');
+  tree(); renderBar(); renderTOC();
+  $('doc').innerHTML = summaryHTML() + DOC.map(sectionHTML).join('') +
+    `<p class="foot">${esc(CFG.sourceNote)} Punctuation-only and formatting differences are hidden. Which changes are substantive, the notes and the summary are example AI judgments written for this prototype from the exact before-and-after text; they need review by someone who knows the policy.</p>`;
+  if (keepScroll) $('main').scrollTop = y;
+  if (SEARCH.q) runSearch(); 
+  layoutNotes();
+  spy.last = null; spy();
+}
+function goTo(i, behavior = 'smooth', toChange) {
+  const sec = $('s' + i); if (!sec) return;
+  reveal(S[i]);
+  const el = (toChange && (sec.querySelector('.callout') || sec.querySelector('.pp.cb'))) || sec;
+  const main = $('main'), bar = document.querySelector('.bar').offsetHeight;
+  main.scrollTo({ top: main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - bar - 16, behavior });
+  try { history.replaceState(null, '', '#' + DOCID + '/' + V[FROM] + '~' + V[TO] + '~' + S[i].key.replace(/~/g, '!')); } catch (e) {}
+  $('side').classList.remove('open');
+}
+function step(d) {
+  if (!TARGETS.length) return;
+  const n = TARGETS.length;
+  if (st.cur < 0) {
+    // Start from where the reader is.
+    const top = $('main').getBoundingClientRect().top + 80;
+    const idx = TARGETS.findIndex(s => $('s' + s.i).getBoundingClientRect().top > top + 2);
+    st.cur = d > 0 ? (idx < 0 ? 0 : idx) : ((idx < 0 ? n : idx) - 1 + n) % n;
+  } else st.cur = (st.cur + d + n) % n;
+  document.querySelectorAll('.sec.cur').forEach(e => e.classList.remove('cur'));
+  const s = TARGETS[st.cur];
+  $('s' + s.i).classList.add('cur');
+  document.querySelector('.nav .pos').textContent = `${st.cur + 1} of ${n}`;
+  goTo(s.i, 'smooth', true);
+}
+// Outline follows the reader.
+function spy() {
+  const main = $('main');
+  const line = main.getBoundingClientRect().top + document.querySelector('.bar').offsetHeight + 24;
+  let top = null;
+  for (const e of document.querySelectorAll('.sec')) { if (e.getBoundingClientRect().top <= line) top = e; else break; }
+  top = top || document.querySelector('.sec');
+  if (!top || spy.last === top.dataset.i) return;
+  if (!document.querySelector(`.toc a[data-go="${top.dataset.i}"]`)) reveal(S[+top.dataset.i]);
+  spy.last = top.dataset.i;
+  document.querySelectorAll('.toc a.on').forEach(a => a.classList.remove('on'));
+  const a = document.querySelector(`.toc a[data-go="${top.dataset.i}"]`);
+  if (a) { a.classList.add('on'); const t = $('side'); const r = a.getBoundingClientRect(), R = t.getBoundingClientRect(); const pk = $('pick').offsetHeight; if (r.top < R.top + pk + 20 || r.bottom > R.bottom - 40) t.scrollTop += r.top - R.top - pk - (t.clientHeight - pk) / 3; }
+}
+on($('main'), 'scroll', () => { if (!spy.raf) spy.raf = requestAnimationFrame(() => { spy.raf = 0; spy(); }); }, { passive: true });
+
+// ---------- events ----------
+on(document, 'click', e => {
+  const hb = e.target.closest('[data-hit]'); if (hb) { gotoHit(+hb.dataset.hit); renderDrop(false); return; }
+  if (!e.target.closest('.search')) renderDrop(false);
+  const all = e.target.closest('[data-all]');
+  if (all) { if (all.dataset.all === '1') DOC.forEach(x => { if (x.kids && x.kids.length) open.add(x.i); }); else open.clear(); renderTOC(); return; }
+  const tw = e.target.closest('[data-tw]');
+  if (tw) { const i = +tw.dataset.tw; open.has(i) ? open.delete(i) : open.add(i); renderTOC(); return; }
+  const go = e.target.closest('[data-go]');
+  if (go) { e.preventDefault(); const i = +go.dataset.go; const k = TARGETS.findIndex(s => s.i === i); if (k >= 0) { st.cur = k; document.querySelectorAll('.sec.cur').forEach(x => x.classList.remove('cur')); $('s' + i).classList.add('cur'); document.querySelector('.nav .pos').textContent = `${k + 1} of ${TARGETS.length}`; } goTo(i, 'smooth', !go.closest('.toc')); return; }
+  const sb = e.target.closest('[data-sbs]');
+  if (sb) { const i = +sb.dataset.sbs; st.sbs.has(i) ? st.sbs.delete(i) : st.sbs.add(i); const s = S[i]; $('s' + i).outerHTML = sectionHTML(s); if (SEARCH.q) runSearch(true); layoutNotes(); return; }
+  const pr = e.target.closest('[data-pair]');
+  if (pr) { const [a, b, i] = pr.dataset.pair.split('~').map(Number); setPair(a, b); render(); goTo(i, 'auto'); return; }
+  if (e.target.closest('#prev')) return step(-1);
+  if (e.target.closest('#next')) return step(1);
+  if (e.target.closest('#more')) { st.showAll = !st.showAll; render(true); return; }
+  if (e.target.closest('#dlgo')) { download(+$('dlv').value); return; }
+  const nv = e.target.closest('[data-nav]');
+  if (nv) { st.nav = nv.dataset.nav; st.cur = -1; render(true); return; }
+  if (e.target.closest('#contents') || e.target.closest('#pairbtn')) { $('side').classList.toggle('open'); return; }
+  const qk = e.target.closest('.pick .quick button');
+  if (qk) { changePair(+qk.dataset.a, +qk.dataset.b); return; }
+  const m = e.target.closest('[data-minor]');
+  if (m) { st.minor = m.dataset.minor; store.set('minor', st.minor); render(true); return; }
+  if ($('side').classList.contains('open') && !e.target.closest('#side')) $('side').classList.remove('open');
+  const vw = document.querySelector('.view'); if (vw && vw.open && !e.target.closest('.view')) vw.open = false;
+});
+on(document, 'change', e => {
+  if (e.target.id === 'area') { st.area = e.target.value; st.cur = -1; render(true); }
+  if (e.target.id === 'q') return;
+  if (e.target.id === 'clean') { st.clean = e.target.checked; render(true); return; }
+  if (e.target.id === 'dlv') { const a = $('dlgo'); a.dataset.v = e.target.value; return; }
+  if (e.target.id === 'pickA') changePair(+e.target.value, TO);
+  if (e.target.id === 'pickB') changePair(FROM, +e.target.value);
+});
+on(document, 'keydown', e => {
+  if (e.target.id === 'q') {
+    if (e.key === 'Enter') { e.preventDefault(); renderDrop(false); nextHit(e.shiftKey ? -1 : 1); }
+    if (e.key === 'Escape') { if (!$('qdrop').hidden) renderDrop(false); else { e.target.value = ''; SEARCH.q = ''; runSearch(); } }
+    return;
+  }
+  if (e.target.closest('input, select, textarea')) return;
+  if (e.key === '/' ) { e.preventDefault(); $('q').focus(); return; }
+  if (e.key === 'j' || e.key === 'n') step(1);
+  if (e.key === 'k' || e.key === 'p') step(-1);
+});
+
+on(document, 'focusin', e => { if (e.target.id === 'q') renderDrop(true); });
+on(document, 'input', e => { if (e.target.id !== 'q') return; clearTimeout(runSearch.t); runSearch.t = setTimeout(() => { SEARCH.q = e.target.value; SEARCH.open = null; runSearch(); }, 220); });
+function changePair(a, b) { setPair(a, b); SEARCH.cur = -1; render(); $('main').scrollTop = 0; $('side').classList.remove('open'); try { history.replaceState(null, '', '#' + DOCID + '/' + V[FROM] + '~' + V[TO]); } catch (e) {} }
+
+// Drag the outline's edge to make it wider or narrower.
+(function () {
+  const saved = +store.get('tocw'); if (saved) document.querySelector('.app').style.setProperty('--tocw', saved + 'px');
+  let drag = false;
+  on(document, 'pointerdown', e => { if (e.target.id === 'grip') { drag = true; e.target.classList.add('drag'); e.preventDefault(); } });
+  on(document, 'pointermove', e => {
+    if (!drag) return;
+    const w = Math.max(220, Math.min(560, e.clientX));
+    document.querySelector('.app').style.setProperty('--tocw', w + 'px');
+    $('side').classList.toggle('wide', w > 380);
+  });
+  on(document, 'pointerup', () => { if (!drag) return; drag = false; const g = $('grip'); if (g) g.classList.remove('drag'); store.set('tocw', parseInt(getComputedStyle(document.querySelector('.app')).getPropertyValue('--tocw'))); });
+})();
+
+// ---------- start ----------
+(function start() {
+  const h = decodeURIComponent(location.hash.slice(1)).replace(/^[^/]*\/?/, '').split('~');
+  if (h.length > 3) h[2] = h.slice(2).join('~');
+  const a = V.indexOf(h[0]), b = V.indexOf(h[1]);
+  const dflt = CFG.defaultPair ? [V.indexOf(CFG.defaultPair[0]), V.indexOf(CFG.defaultPair[1])] : [V.length - 2, V.length - 1];
+  if (a >= 0 && b > a) setPair(a, b); else setPair(dflt[0], dflt[1]);
+  render();
+  const t = h[2] && DOC.find(s => s.key === h[2].replace(/!/g, '~'));
+  if (t) setTimeout(() => goTo(t.i, 'auto', true), 0);
+})();
+}
+
+
+// ---------- deadlines calendar (mockup) ----------
+function calendar(root, data, signal) {
+  const ev = data.events.map((e, k) => ({ ...e, k, d: new Date(e.date + 'T12:00:00'), e: e.end ? new Date(e.end + 'T12:00:00') : null }));
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const st = { m: new Date(today.getFullYear(), today.getMonth(), 1), f: 'all', sel: null };
+  const LBL = { 'bhsa-manual': 'BHSA Manual', 'bhin-network-adequacy': 'BHINs' };
+  const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const fmt = (d, o) => d.toLocaleDateString('en-US', o);
+  const link = e => '#' + e.doc + '/' + e.pair.join('~') + (e.section ? '~' + e.section.replace(/~/g, '!') : '');
+  const shown = () => ev.filter(e => st.f === 'all' || (st.f === 'changes' ? e.kind === 'issued' || e.changed : e.doc === st.f));
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  function draw() {
+    const list = shown();
+    const y = st.m.getFullYear(), mo = st.m.getMonth();
+    const start = new Date(y, mo, 1 - new Date(y, mo, 1).getDay(), 12);
+    let cells = '';
+    for (let k = 0; k < 42; k++) {
+      const d = new Date(start); d.setDate(start.getDate() + k);
+      if (k === 35 && d.getMonth() !== mo) break;
+      const here = list.filter(e => e.kind !== 'period' && sameDay(e.d, d));
+      const per = list.filter(e => e.kind === 'period' && d >= e.d && d <= e.e);
+      const starts = list.filter(e => e.kind === 'period' && sameDay(e.d, d));
+      cells += `<div class="day${d.getMonth() !== mo ? ' out' : ''}${sameDay(d, today) ? ' today' : ''}${per.length ? ' inper' : ''}"><span class="n">${d.getDate()}</span>` +
+        starts.concat(here).map(e => `<button class="ev ${e.kind}${e.d < today && e.kind !== 'period' ? ' past' : ''}${st.sel === e.k ? ' sel' : ''}" data-k="${e.k}" title="${esc(e.title)}">${e.kind === 'period' ? '▸ ' : ''}${esc(e.title)}</button>`).join('') + '</div>';
+    }
+    const upcoming = list.filter(e => (e.e || e.d) >= today).sort((a, b) => a.d - b.d);
+    const pick = st.sel != null ? ev[st.sel] : null;
+    const items = pick ? [pick].concat(upcoming.filter(e => e !== pick)) : upcoming;
+    const days = e => Math.round((e.d - today) / 864e5);
+    root.innerHTML = `<div class="calw">
+      <h1>Deadlines &amp; changes</h1>
+      <p class="lede">What counties must do and when, across the BHSA Manual and BHINs, alongside when DHCS changed the rules. Each date links to the sentence that sets it. <em>Mockup: dates picked by hand; a real version would pull them from the text.</em></p>
+      <div class="calbar">
+        <div class="tg" role="group" aria-label="Show">${[['all', 'Everything'], ['bhsa-manual', 'BHSA Manual'], ['bhin-network-adequacy', 'BHINs'], ['changes', 'New or changed dates']].map(([k, t]) => `<button data-f="${k}" aria-pressed="${st.f === k}">${t}</button>`).join('')}</div>
+        <div class="mnav"><button class="ib" data-m="-1" aria-label="Previous month">&#8249;</button><b>${fmt(st.m, { month: 'long', year: 'numeric' })}</b><button class="ib" data-m="1" aria-label="Next month">&#8250;</button><button class="sel" data-m="0">Today</button></div>
+      </div>
+      <div class="calgrid">
+        <div><div class="month">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(x => `<div class="dow">${x}</div>`).join('')}${cells}</div>
+          <div class="legend"><span><i style="background:var(--del-bg)"></i>Due date</span><span><i style="background:var(--accent-soft)"></i>Requirement starts</span><span><i style="background:var(--sunk)"></i>New version issued</span><span><i style="background:color-mix(in srgb, var(--accent-soft) 45%, var(--panel))"></i>Reporting window</span></div></div>
+        <aside class="agenda"><h2>${pick ? 'Selected' : 'Coming up'}</h2><ol>${items.slice(0, 7).map(e => `<li class="card2 ${e.kind}${pick === e ? ' sel' : ''}">
+          <div class="dt"><b>${e.d.getDate()}</b><span>${fmt(e.d, { month: 'short' })} ${String(e.d.getFullYear()).slice(2)}</span></div>
+          <div class="tt">${esc(e.title)}</div>
+          <div class="dd">${esc(e.detail)}${e.e ? ` Through ${fmt(e.e, { month: 'short', day: 'numeric', year: 'numeric' })}.` : ''}</div>
+          ${e.changed ? `<div class="chgd">${esc(e.changed)}</div>` : ''}
+          <div class="soon">${e.d >= today ? `In ${days(e)} days · ` : ''}${esc(LBL[e.doc])} · <a href="${link(e)}">${esc(e.cite || 'See what changed')} &rarr;</a></div>
+        </li>`).join('')}</ol></aside>
+      </div></div>`;
+  }
+  root.addEventListener('click', e => {
+    const f = e.target.closest('[data-f]'); if (f) { st.f = f.dataset.f; st.sel = null; draw(); return; }
+    const m = e.target.closest('[data-m]'); if (m) { const k = +m.dataset.m; st.m = k ? new Date(st.m.getFullYear(), st.m.getMonth() + k, 1) : new Date(today.getFullYear(), today.getMonth(), 1); draw(); return; }
+    const b = e.target.closest('.ev'); if (b) { st.sel = +b.dataset.k; draw(); }
+  }, { signal });
+  draw();
+}
+
+// ---------- the library: which documents there are, and switching between them ----------
+(async function () {
+  // Data loading. On a web server (Cloudflare) the page fetches the .json files.
+  // Opened straight from a folder (file://), browsers block that, so it loads the
+  // .js copy of each file instead, which browsers allow.
+  const LOCAL = location.protocol === 'file:';
+  window.__DATA = window.__DATA || {};
+  const loadJSON = path => LOCAL
+    ? new Promise((ok, bad) => {
+        if (window.__DATA[path]) return ok(window.__DATA[path]);
+        const sc = document.createElement('script'); sc.src = path.replace(/\.json$/, '.js');
+        sc.onload = () => window.__DATA[path] ? ok(window.__DATA[path]) : bad(new Error(path + ' is missing'));
+        sc.onerror = () => bad(new Error(path + ' is missing'));
+        document.head.appendChild(sc);
+      })
+    : fetch(path).then(r => { if (!r.ok) throw new Error(path + ' (' + r.status + ')'); return r.json(); });
+  let lib;
+  try { lib = await loadJSON('data/library.json'); }
+  catch (e) {
+    document.getElementById('doc').innerHTML = `<p class="loading">Could not load the data files (${e.message}). Keep index.html and the data folder together in one folder.</p>`;
+    return;
+  }
+  let ctl = null;
+  const docOf = () => { const id = decodeURIComponent(location.hash.slice(1)).split('/')[0]; return lib.documents.find(d => d.id === id) || lib.documents[0]; };
+  function tabs(cur) {
+    document.getElementById('docs').innerHTML = lib.documents.map(d =>
+      `<button data-doc="${d.id}" aria-pressed="${d.id === cur.id}">${d.label}<small>${d.sub}</small></button>`).join('');
+  }
+  async function load(d, keepHash) {
+    if (ctl) ctl.abort();
+    ctl = new AbortController();
+    tabs(d);
+    document.getElementById('doc').innerHTML = '<p class="loading">Loading ' + d.label + '…</p>';
+    if (!keepHash) try { history.replaceState(null, '', '#' + d.id); } catch (e) {}
+    document.querySelector('.app').classList.toggle('cal', d.kind === 'calendar');
+    if (d.kind === 'calendar') {
+      document.getElementById('brand').innerHTML = 'Change Tracker<small>Deadlines across the BHSA Manual and BHINs &middot; DHCS</small>';
+      try { const data = await fetch('data/deadlines.json').then(r => r.json()); document.getElementById('doc').innerHTML = ''; calendar(document.getElementById('doc'), data, ctl.signal); }
+      catch (e) { document.getElementById('doc').innerHTML = '<p class="loading">Could not load deadlines.</p>'; }
+      return;
+    }
+    const get = f => loadJSON(`data/${d.id}/${f}.json`);
+    try {
+      const [D, SUB, CFG] = await Promise.all([get('history'), get('judgments'), get('config')]);
+      document.getElementById('main').scrollTop = 0;
+      boot(D, SUB, CFG, d.id, ctl.signal);
+    } catch (e) {
+      document.getElementById('doc').innerHTML = '<p class="loading">Could not load ' + d.label + ' (' + e.message + ').</p>';
+    }
+  }
+  document.getElementById('docs').addEventListener('click', e => { const b = e.target.closest('[data-doc]'); if (b) load(lib.documents.find(d => d.id === b.dataset.doc)); });
+  // Links between views (a calendar date to its section) change the address.
+  window.addEventListener('hashchange', () => load(docOf(), true));
+  load(docOf(), true);
+})();
+
+// Ask sits on top of the tracker. It calls the local server, which uses the
+// same chat client as the PDF question command and searches this document's sections.
+(function () {
+  const pane = document.getElementById('askpane');
+  const body = document.getElementById('askbody');
+  const opener = document.getElementById('askopen');
+  const form = document.getElementById('askform');
+  const submit = form.querySelector('button');
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let busy = false;
+  const setOpen = open => {
+    pane.classList.toggle('open', open);
+    opener.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) document.getElementById('askq').focus();
+  };
+  opener.addEventListener('click', () => setOpen(true));
+  document.getElementById('askclose').addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && pane.classList.contains('open')) setOpen(false);
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    const question = document.getElementById('askq').value.trim();
+    if (!question) { body.innerHTML = '<p class="askerr">Enter a question.</p>'; return; }
+    const document_id = decodeURIComponent(location.hash.slice(1)).split('/')[0];
+    busy = true;
+    submit.disabled = true;
+    body.innerHTML = '<p class="ai">Searching the sections and writing an answer…</p>';
+    let response;
+    try {
+      response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          document_id,
+          provider: document.getElementById('askprovider').value,
+        }),
+      });
+    } catch (err) {
+      body.innerHTML = '<p class="askerr">Ask needs the local server. From the document-rag folder, run: uv run document-rag-site</p>';
+      return;
+    } finally {
+      busy = false;
+      submit.disabled = false;
+    }
+    let payload = {};
+    try { payload = await response.json(); } catch (err) { payload = { error: 'The server sent an unreadable response.' }; }
+    if (!response.ok || payload.error) {
+      body.innerHTML = `<p class="askerr">${esc(payload.error || 'The question could not be answered.')}</p>`;
+      return;
+    }
+    const sources = (payload.sources || []).map(source => `<div class="src"><a href="${esc(source.href || '#')}">${esc(source.source_id || '')} ${esc(source.title || '')}</a><p>${esc(source.version || '')}${source.page ? ' · p.' + esc(source.page) : ''}</p><p>${esc((source.text || '').slice(0, 420))}</p></div>`).join('');
+    body.innerHTML = `<div class="ans">${esc(payload.answer || '')}</div>${sources}`;
+  });
+})();
+</script>

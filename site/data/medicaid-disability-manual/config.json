@@ -1,0 +1,41 @@
+{
+  "kind": "pdf",
+  "strip": "^",
+  "prefix": "V.",
+  "noun": "version",
+  "pdf": {
+    "2024.12.0": "/files/Medicaid%20Disability%20Manual-V.2024.12.0-20241201.pdf",
+    "2025.2.0": "/files/Medicaid%20Disability%20Manual-V.2025.2.0-20250201.pdf",
+    "2026.1.0": "/files/Medicaid%20Disability%20Manual-V.2026.1.0-20260101.pdf"
+  },
+  "dates": {
+    "2024.12.0": "2024-12-01",
+    "2025.2.0": "2025-02-01",
+    "2026.1.0": "2026-01-01"
+  },
+  "srcName": "PDF",
+  "docTitle": "Medicaid Disability Manual",
+  "topic": "Medicaid Disability Manual",
+  "issued": "Updated",
+  "chainLabel": "Editions",
+  "fileStem": "medicaid-disability-manual",
+  "sourceNote": "Text extracted from the Medicaid Disability Manual PDFs in this project.",
+  "judgedLabel": "none yet",
+  "defaultPair": [
+    "2025.2.0",
+    "2026.1.0"
+  ],
+  "quick": [
+    [
+      "2024.12.0",
+      "2025.2.0",
+      "2024.12.0 to 2025.2.0"
+    ],
+    [
+      "2025.2.0",
+      "2026.1.0",
+      "2025.2.0 to 2026.1.0"
+    ]
+  ],
+  "front": []
+}

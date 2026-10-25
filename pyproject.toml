@@ -1,0 +1,43 @@
+[project]
+name = "document-rag"
+version = "0.1.0"
+description = "Answer questions and summarize a folder of PDFs with an API or local generator and local Ollama embeddings"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "chromadb>=1.5.9",
+    "langchain>=1.4.0",
+    "langchain-anthropic>=1.0.0",
+    "langchain-chroma>=1.1.0",
+    "langchain-classic>=1.0.8",
+    "langchain-community>=0.4.2",
+    "langchain-ollama>=1.0.0",
+    "langchain-text-splitters>=1.1.2",
+    "ollama>=0.6.2",
+    "pypdf>=6.18.0",
+    "python-dotenv>=1.0.0",
+    "rank-bm25>=0.2.2",
+    "streamlit>=1.64.0",
+]
+
+[project.scripts]
+document-rag = "document_rag:main"
+document-rag-site = "document_rag.server:main"
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+
+[project.optional-dependencies]
+local = [
+    "torch>=2.5",
+    "transformers>=4.46",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
